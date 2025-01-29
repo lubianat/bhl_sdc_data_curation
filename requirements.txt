@@ -1,0 +1,6 @@
+git+https://github.com/lubianat/WikibaseIntegrator.git#egg=WikibaseIntegrator
+tqdm
+requests
+pandas
+pathlib
+bs4

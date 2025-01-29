@@ -36,6 +36,8 @@ from wikibaseintegrator.datatypes import (
 from login import *
 from helper import get_media_info_id, generate_custom_edit_summary
 from tqdm import tqdm
+from pathlib import Path
+
 wbi_config['MEDIAWIKI_API_URL'] = 'https://commons.wikimedia.org/w/api.php'
 wbi_config['SPARQL_ENDPOINT_URL'] = 'https://query.wikidata.org/sparql'
 wbi_config['WIKIBASE_URL'] = 'https://commons.wikimedia.org'
@@ -367,7 +369,6 @@ def add_published_in_claim(row, new_statements):
         new_statements.append(claim_published_in)
 
 if __name__ == "__main__":
-    main(
-        f"/home/lubianat/Documents/wiki_related/BHL/bhl_sdc_exploration/reconciliation_bot/"
-        f"{CATEGORY.replace(' ', '_')}.tsv"
-    )
+    HERE = Path(__file__).parent
+    DATA = HERE / "data"
+    main(DATA / f"{CATEGORY.replace(' ', '_')}.tsv")

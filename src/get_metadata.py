@@ -7,11 +7,20 @@ from tqdm import tqdm
 import requests
 from login import * 
 
-def get_flickr_tags(photo_id):
-    # Flickr API endpoint for getting tags of a photo
-    API_ENDPOINT = "https://www.flickr.com/services/rest/"
+COMMONS_API_ENDPOINT = "https://commons.wikimedia.org/w/api.php"
+WIKIDATA_SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
+BHL_BASE_URL = "https://www.biodiversitylibrary.org"
 
-    # Parameters for the API call
+# Input category
+category_name = "Oiseaux brillans du Brésil (Descourtilz, 1834)"
+category_name = category_name.replace("_", " ").replace("Category:", "").strip()
+ILLUSTRATOR = "Q10340184"
+ENGRAVER = ""
+LITHOGRAPHER = "Q131861745"
+REF_URL_FOR_AUTHORS = ""
+
+def get_flickr_tags(photo_id):
+    API_ENDPOINT = "https://www.flickr.com/services/rest/"
     params = {
         "method": "flickr.tags.getListPhoto",
         "api_key": FLICKR_API_KEY,
@@ -19,11 +28,7 @@ def get_flickr_tags(photo_id):
         "format": "json",
         "nojsoncallback": 1  # Prevent JSONP callback, get plain JSON
     }
-
-    # Make the API request
     response = requests.get(API_ENDPOINT, params=params)
-
-    # Handle the API response
     tag_raw_content = []
     if response.status_code == 200:
         data = response.json()
@@ -39,17 +44,6 @@ def get_flickr_tags(photo_id):
         print("Failed to fetch tags. HTTP Status Code:", response.status_code)
     return tag_raw_content
 
-COMMONS_API_ENDPOINT = "https://commons.wikimedia.org/w/api.php"
-WIKIDATA_SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
-BHL_BASE_URL = "https://www.biodiversitylibrary.org"
-
-# Input category
-category_name = "Oiseaux brillans du Brésil (Descourtilz, 1834)"
-ILLUSTRATOR = "Q10340184"
-ENGRAVER = ""
-LITHOGRAPHER = "Q131861745"
-REF_URL_FOR_AUTHORS = ""
-category_name = category_name.replace("_", " ").replace("Category:", "").strip()
 def get_files_in_category(category_name):
     params = {
         "action": "query",
@@ -227,7 +221,7 @@ def generate_data(category_name):
 # Main logic
 data = generate_data(category_name)
 HERE = Path(__file__).parent
-output_path = HERE
+output_path = HERE / "data"
 output_path.mkdir(parents=True, exist_ok=True)
 output_file = output_path / f"{category_name.replace(' ', '_')}.tsv"
 
