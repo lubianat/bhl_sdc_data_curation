@@ -1,26 +1,10 @@
-TEST = True
-CUSTOM_INSTANCE_OF = True
-PHOTOGRAPHS_ONLY = False
 CATEGORY = "Oiseaux_brillans_du_Brésil_(Descourtilz,_1834)"
+
+TEST = False
+CUSTOM_INSTANCE_OF = False
+PHOTOGRAPHS_ONLY = False
 SKIP_PUBLISHED_IN = False
 ADD_EMPTY_IF_SPONSOR_MISSING = True
-INSTANCE_OF_DICT = {
-    "Illustration": "Q178659",
-    "Text Illustration": "Q131597974",
-    "Text Table of Contents": "Q1456936",
-    "Title Page Text Illustration": "Q1339862"
-}
-
-INSTITUTIONS_DICT = {
-    "Smithsonian Libraries and Archives": "Q1609326",
-    "Smithsonian Institution": "Q131626",
-    "Smithsonian Institution Libraries": "Q1609326",
-    "Missouri Botanical Garden, Peter H. Raven Library": "Q53530601",
-    "Missouri Botanical Garden": "Q1852803",
-    "New York Botanical Garden, LuEsther T. Mertz Library": "Q31079305",
-    "The LuEsther T Mertz Library, the New York Botanical Garden": "Q31079305",
-    "Natural History Museum Library, London":"Q69792905"
-}
 
 import csv
 import logging
@@ -37,20 +21,24 @@ from login import *
 from helper import get_media_info_id, generate_custom_edit_summary
 from tqdm import tqdm
 from pathlib import Path
+from wdcuration import query_wikidata
+import json 
+
+HERE = Path(__file__).parent
+DATA = HERE / "data"
+DICTS = HERE / "dicts"
+
+INSTITUTIONS_DICT = json.loads(DICTS.joinpath("institutions.json").read_text())
+INSTANCE_OF_DICT = json.loads(DICTS.joinpath("instance_of.json").read_text())
 
 wbi_config['MEDIAWIKI_API_URL'] = 'https://commons.wikimedia.org/w/api.php'
 wbi_config['SPARQL_ENDPOINT_URL'] = 'https://query.wikidata.org/sparql'
 wbi_config['WIKIBASE_URL'] = 'https://commons.wikimedia.org'
-
-# Set a custom user agent (important if editing Wikimedia projects)
 wbi_config['USER_AGENT'] = 'TiagoLubiana (https://meta.wikimedia.org/wiki/User:TiagoLubiana)'
 
 def main(csv_path):
 
     logging.basicConfig(level=logging.INFO)
-
-    # Count rows first (minus header)
-    total_rows = sum(1 for _ in open(csv_path, encoding='utf-8-sig')) - 1
 
     login_instance = wbi_login.Login(
         user=USERNAME,
@@ -58,17 +46,18 @@ def main(csv_path):
         mediawiki_api_url=wbi_config['MEDIAWIKI_API_URL']
     )
     wbi = WikibaseIntegrator(login=login_instance)
+    
+    total_rows = sum(1 for _ in open(csv_path, encoding='utf-8-sig')) - 1
     edit_summary = generate_custom_edit_summary(test_edit=TEST)
 
     with open(csv_path, mode='r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f, delimiter='\t')
+        
         for row in tqdm(reader, desc="Processing rows", unit="rows", total=total_rows):
 
             file_name = row.get("File", "").strip()
-            # Convert to lowercase for reliable extension check:
             file_name_lower = file_name.lower()
 
-            # Skip PDFs/djvus more reliably
             if file_name_lower.endswith(".pdf") or file_name_lower.endswith(".djvu"):
                 logging.warning(f"Skipping row with PDF/DJVU file: {file_name}")
                 continue
@@ -138,8 +127,6 @@ def main(csv_path):
                     logging.error(f"Failed to write SDC for {file_name}: {e}")
             else:
                 logging.info(f"No SDC data to add for {file_name}, skipping...")
-
-from wdcuration import query_wikidata
 
 def get_qid_from_flickr_binomial_tags(flickr_tags):
     qids = []
@@ -369,6 +356,4 @@ def add_published_in_claim(row, new_statements):
         new_statements.append(claim_published_in)
 
 if __name__ == "__main__":
-    HERE = Path(__file__).parent
-    DATA = HERE / "data"
     main(DATA / f"{CATEGORY.replace(' ', '_')}.tsv")

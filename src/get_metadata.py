@@ -14,7 +14,7 @@ BHL_BASE_URL = "https://www.biodiversitylibrary.org"
 # Input category
 category_name = "Oiseaux brillans du Brésil (Descourtilz, 1834)"
 category_name = category_name.replace("_", " ").replace("Category:", "").strip()
-ILLUSTRATOR = "Q10340184"
+ILLUSTRATOR = "Q6170022"
 ENGRAVER = ""
 LITHOGRAPHER = "Q131861745"
 REF_URL_FOR_AUTHORS = ""
