@@ -107,7 +107,9 @@ def main(csv_path):
                     add_lithographer_claim(row, new_statements)
 
             add_depicts_claim(row, new_statements)
-            add_inception_claim(row, new_statements)
+
+            if not SKIP_DATES:
+                add_inception_claim(row, new_statements)
 
             if new_statements:
                 media.claims.add(new_statements, action_if_exists=wbi_enums.ActionIfExists.MERGE_REFS_OR_APPEND)
@@ -126,7 +128,9 @@ def get_qid_from_flickr_binomial_tags(flickr_tags):
     for tag in flickr_tags:
         # Example tag + " 'taxonomy:binomial=Psittacus cyanogaster'"
         if "taxonomy:binomial=" in tag:
+            # remove all non-alphanumeric characters
             taxon_name = tag.split("taxonomy:binomial=")[1].strip().replace("'", "")
+            taxon_name = ''.join(e for e in taxon_name if e.isalnum() or e == " ")
             qid = get_qid_from_taxon_name(taxon_name)
             if qid:
                 qids.append(qid)
@@ -345,6 +349,11 @@ def get_institution_as_a_qid(collection):
     return collection
 
 def add_instance_claim(row, new_statements):
+    global ALL_DRAWINGS
+    if ALL_DRAWINGS == True:
+        claim_instance_of = Item(prop_nr="P31", value="Q178659")
+        new_statements.append(claim_instance_of)
+        return 1
     instance_of = row.get("Instance of", "").strip()
     if instance_of:
         if instance_of in INSTANCE_OF_DICT:

@@ -102,11 +102,13 @@ def parse_bhl_template(wikitext):
 
 def find_publication_from_category(category_name):
     query = f"""
-    SELECT ?item ?itemLabel ?publicationDate ?bhl_bib_id
+    SELECT ?item ?itemLabel ?publicationDate ?bhl_bib_id ?bhl_item_id
     WHERE
     {{
       ?item wdt:P373 "{category_name}" .
-      ?item wdt:P4327 ?bhl_bib_id .
+      {{?item wdt:P4327 ?bhl_bib_id .}}
+      UNION
+      {{?item wdt:P11959 ?bhl_item_id .}}
       OPTIONAL {{ ?item wdt:P577 ?publicationDate. }}
       SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
     }}

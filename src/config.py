@@ -1,8 +1,11 @@
-CATEGORY_RAW = "Category:Birds of La Plata (Hudson) - Volume 1"
-TEST = True
+CATEGORY_RAW = "The birds of South America"
+TEST = False
+ALL_DRAWINGS = True
+
 CUSTOM_INSTANCE_OF = False
 PHOTOGRAPHS_ONLY = False
 SKIP_PUBLISHED_IN = False
+SKIP_DATES = True
 ADD_EMPTY_IF_SPONSOR_MISSING = True
 
 
