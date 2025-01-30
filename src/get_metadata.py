@@ -6,18 +6,7 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 import requests
 from login import * 
-
-COMMONS_API_ENDPOINT = "https://commons.wikimedia.org/w/api.php"
-WIKIDATA_SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
-BHL_BASE_URL = "https://www.biodiversitylibrary.org"
-
-# Input category
-category_name = "Oiseaux brillans du Brésil (Descourtilz, 1834)"
-category_name = category_name.replace("_", " ").replace("Category:", "").strip()
-ILLUSTRATOR = "Q6170022"
-ENGRAVER = ""
-LITHOGRAPHER = "Q131861745"
-REF_URL_FOR_AUTHORS = ""
+from config import *
 
 def get_flickr_tags(photo_id):
     API_ENDPOINT = "https://www.flickr.com/services/rest/"
@@ -219,11 +208,11 @@ def generate_data(category_name):
     return rows
 
 # Main logic
-data = generate_data(category_name)
+data = generate_data(CATEGORY_NAME)
 HERE = Path(__file__).parent
 output_path = HERE / "data"
 output_path.mkdir(parents=True, exist_ok=True)
-output_file = output_path / f"{category_name.replace(' ', '_')}.tsv"
+output_file = output_path / f"{CATEGORY_NAME.replace(' ', '_')}.tsv"
 
 df = pd.DataFrame(data)
 df.to_csv(output_file, sep="\t", index=False)

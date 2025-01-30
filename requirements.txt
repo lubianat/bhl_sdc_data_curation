@@ -1,7 +1,7 @@
 git+https://github.com/lubianat/WikibaseIntegrator.git@merge_refs_patch#egg=WikibaseIntegrator
+git+https://github.com/lubianat/wdcuration.git#egg=wdcuration
 tqdm
 requests
 pandas
 pathlib
 bs4
-wdcuration

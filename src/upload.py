@@ -1,11 +1,4 @@
-CATEGORY = "Oiseaux_brillans_du_Brésil_(Descourtilz,_1834)"
-
-TEST = False
-CUSTOM_INSTANCE_OF = False
-PHOTOGRAPHS_ONLY = False
-SKIP_PUBLISHED_IN = False
-ADD_EMPTY_IF_SPONSOR_MISSING = True
-
+from config import *
 import csv
 import logging
 from wikibaseintegrator import wbi_login, WikibaseIntegrator, wbi_enums
@@ -21,7 +14,7 @@ from login import *
 from helper import get_media_info_id, generate_custom_edit_summary
 from tqdm import tqdm
 from pathlib import Path
-from wdcuration import query_wikidata
+from wdcuration import query_wikidata, add_key_and_save_to_independent_dict
 import json 
 
 HERE = Path(__file__).parent
@@ -294,8 +287,7 @@ def add_blank_sponsor(row, new_statements):
 def add_digital_sponsor_claim(row, new_statements):
     sponsor = row.get("Sponsor", "").strip()
     if sponsor:
-        if sponsor in INSTITUTIONS_DICT:
-            sponsor = INSTITUTIONS_DICT[sponsor]
+        sponsor = get_institution_as_a_qid(sponsor)
 
         qualifiers = Qualifiers()
         qualifiers.add(Item(prop_nr="P3831", value="Q131344184"))  # digitization sponsor
@@ -318,8 +310,7 @@ def add_digital_sponsor_claim(row, new_statements):
 def add_collection_claim(row, new_statements):
     collection = row.get("Collection", "").strip()
     if collection:
-        if collection in INSTITUTIONS_DICT:
-            collection = INSTITUTIONS_DICT[collection]
+        collection = get_institution_as_a_qid(collection)
 
         qualifiers = Qualifiers()
         qualifiers.add(Item(prop_nr="P3831", value="Q131597993"))  # holding institution
@@ -339,6 +330,20 @@ def add_collection_claim(row, new_statements):
         )
         new_statements.append(claim_collection)
 
+def get_institution_as_a_qid(collection):
+    global INSTITUTIONS_DICT
+    if collection in INSTITUTIONS_DICT:
+        collection = INSTITUTIONS_DICT[collection]
+        
+        # test if collection is a QID
+    if not collection.startswith("Q"):
+        INSTITUTIONS_DICT=  add_key_and_save_to_independent_dict(
+                dictionary=INSTITUTIONS_DICT, 
+                dictionary_path=DICTS.joinpath("institutions.json"),
+                string=collection)
+        collection = INSTITUTIONS_DICT[collection]
+    return collection
+
 def add_instance_claim(row, new_statements):
     instance_of = row.get("Instance of", "").strip()
     if instance_of:
@@ -356,4 +361,4 @@ def add_published_in_claim(row, new_statements):
         new_statements.append(claim_published_in)
 
 if __name__ == "__main__":
-    main(DATA / f"{CATEGORY.replace(' ', '_')}.tsv")
+    main(DATA / f"{CATEGORY_NAME.replace(' ', '_')}.tsv")
