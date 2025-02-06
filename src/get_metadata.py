@@ -172,6 +172,11 @@ def generate_data(category_name):
                 illustrator = ILLUSTRATOR
             else:
                 illustrator = input("Enter the Illustrator QID: ").strip()
+            if PAINTER != "":
+                painter = PAINTER
+            else:
+                painter = input("Enter the Painter QID: ").strip()
+            
             if ENGRAVER != "":
                 engraver = ENGRAVER
             else:
@@ -199,6 +204,7 @@ def generate_data(category_name):
             "Illustrator": illustrator or "",
             "Engraver": engraver or "",
             "Lithographer": lithographer or "",
+            "Painter": painter or "",
             "Ref URL for Authors": ref_url_for_authors or "",
             "Inception": inception_date or "",
             "Names": bhl_data["names"] or "",

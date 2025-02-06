@@ -97,6 +97,8 @@ def main(csv_path):
                             add_illustrator_claim(row, new_statements)
                             add_engraver_claim(row, new_statements)
                             add_lithographer_claim(row, new_statements)
+                            add_painter_claim(row, new_statements)
+
 
                         elif PHOTOGRAPHS_ONLY or instance_of_value == "Q125191":
                             # e.g. for photos, skip or handle differently
@@ -105,6 +107,7 @@ def main(csv_path):
                     add_illustrator_claim(row, new_statements)
                     add_engraver_claim(row, new_statements)
                     add_lithographer_claim(row, new_statements)
+                    add_painter_claim(row, new_statements)
 
             add_depicts_claim(row, new_statements)
 
@@ -202,6 +205,29 @@ def add_inception_claim(row, new_statements):
         references.add(ref_obj)
         claim_inception.references = references
         new_statements.append(claim_inception)
+
+
+def add_painter_claim(row, new_statements):
+    painter = row.get("Painter", "").strip()
+    if painter:
+        qualifiers = Qualifiers()
+        qualifiers.add(Item(prop_nr="P518", value="Q112134971"))  # analog work
+        qualifiers.add(Item(prop_nr="P170", value="Q1028181"))    # painter
+
+        references = References()
+        ref_url = row.get("Ref URL for Authors", "").strip()
+        if ref_url:
+            ref_obj = Reference()
+            ref_obj.add(URL(prop_nr="P854", value=ref_url))
+            references.add(ref_obj)
+
+        claim_painter = Item(
+            prop_nr="P170",
+            value=painter,
+            qualifiers=qualifiers,
+            references=references
+        )
+        new_statements.append(claim_painter)
 
 def add_illustrator_claim(row, new_statements):
     illustrator = row.get("Illustrator", "").strip()
