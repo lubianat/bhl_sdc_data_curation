@@ -1,7 +1,7 @@
 CATEGORY_RAW = "The birds of South America"
 TEST = False
 ALL_DRAWINGS = True
-
+SET_PROMINENT = True
 CUSTOM_INSTANCE_OF = False
 PHOTOGRAPHS_ONLY = False
 SKIP_PUBLISHED_IN = False

@@ -147,12 +147,16 @@ def get_qid_from_taxon_name(taxon_name):
         return result[0]["item"].replace("http://www.wikidata.org/entity/", "")
     return ""
 
-def add_depicts_claim(row, new_statements):
+def add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT):
     names = row.get("Names", "").strip()
+    if set_prominent:
+        rank = "preferred"
+    else:
+        rank = "normal"
     if names:
         qid = get_qid_from_taxon_name(names)
         if qid:
-            claim_depicts = Item(prop_nr="P180", value=qid)
+            claim_depicts = Item(prop_nr="P180", value=qid, rank=rank)
             references = References()
             ref_obj = Reference()
             ref_obj.add(Item(prop_nr="P887", value="Q131783016")) # Inferr
@@ -164,7 +168,9 @@ def add_depicts_claim(row, new_statements):
     if flickr_tags:
         qids = get_qid_from_flickr_binomial_tags(flickr_tags)
         for qid in qids:
-            claim_depicts = Item(prop_nr="P180", value=qid)
+            if len(qids) > 1:
+                rank = "normal"
+            claim_depicts = Item(prop_nr="P180", value=qid, rank=rank)
             references = References()
             ref_obj = Reference()
             ref_obj.add(Item(prop_nr="P887", value="Q131782980")) # Inferred from Flickr tag
