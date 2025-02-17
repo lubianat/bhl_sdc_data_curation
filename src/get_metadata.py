@@ -1,40 +1,159 @@
-import requests
 import re
+import requests
+import json
 from pathlib import Path
 import pandas as pd
 from bs4 import BeautifulSoup
 from tqdm import tqdm
-import requests
-from login import * 
+from login import *
 from config import *
-import json 
 
+# Directories for data and dictionaries
 HERE = Path(__file__).parent
 DATA = HERE / "data"
 DICTS = HERE / "dicts"
+API_CACHE = {}
 
+# Load the dictionary mapping BHL page IDs to Flickr IDs
 BHL_TO_FLICKR_DICT = json.loads(DICTS.joinpath("bhl_flickr_dict.json").read_text())
 
+# Globals assumed to be defined in your config module:
+# INFER_FROM_INTERNET_ARCHIVE = True
+# INTERNET_ARCHIVE_OFFSET = 5   # Example offset value
+# BHL_API_KEY is also imported from config
+
+def infer_bhl_page_id_from_ia_url(ia_url, offset=0, ):
+    """
+    Given an Internet Archive URL of a BHL item, extract the IA item identifier and page number,
+    adjust the page number by the given offset, and then use the BHL API to fetch the corresponding
+    BHL page ID, item ID, and bibliography ID.
+    
+    For example, from:
+      https://archive.org/stream/monographofjacam00scla/monographofjacam00scla#page/n125/mode/1up
+    it extracts:
+      item_id = 'monographofjacam00scla'
+      ia_page_number = 125
+    and then calculates target_order = ia_page_number - offset.
+    """
+    # Cache to store API results (local to this call; consider a module-level cache for efficiency)    
+    global API_CACHE
+    # Extract the IA item identifier from the URL.
+    m_item = re.search(r'/stream/([^/]+)/', ia_url)
+    if not m_item:
+        print("Unable to extract IA item identifier from URL.")
+        return None, None, None
+    item_id = m_item.group(1)
+    
+    # Extract the IA page number from the URL; pattern like "page/n125"
+    m_page = re.search(r'page/n(\d+)', ia_url)
+    if not m_page:
+        print("Unable to extract IA page number from URL.")
+        return None, None, None
+    ia_page_number = int(m_page.group(1))
+    
+    # Adjust the page number by the offset to get the target digital order.
+    target_order = ia_page_number - offset
+    if target_order < 1:
+        print("Calculated target order is less than 1.")
+        return None, None, None
+
+    # Check the cache for metadata
+    if item_id in API_CACHE:
+        data = API_CACHE[item_id]
+    else:
+        api_url = "https://www.biodiversitylibrary.org/api3"
+        params = {
+            "op": "GetItemMetadata",
+            "id": item_id,
+            "idtype": "ia",  # The id is an Internet Archive identifier.
+            "pages": "t",    # Include page metadata.
+            "format": "json",
+            "apikey": BHL_API_KEY
+        }
+        
+        response = requests.get(api_url, params=params)
+        if response.status_code != 200:
+            print("BHL API request failed with status code:", response.status_code)
+            return None, None, None
+
+        data = response.json()
+        if data.get("Status") != "ok":
+            print("BHL API returned an error:", data.get("ErrorMessage"))
+            return None, None, None
+
+        # Cache the result
+        API_CACHE[item_id] = data
+
+    # Get the list of pages from the API response.
+    # The response's "Result" is assumed to be a list; we use the first element.
+    result = data.get("Result", [])
+    if not result:
+        print("No result in BHL API response.")
+        return None, None, None
+
+    pages = result[0].get("Pages", [])
+    if not pages:
+        print("No page metadata found in BHL API response.")
+        return None, None, None
+
+    if target_order > len(pages):
+        print(f"Target order {target_order} exceeds available pages ({len(pages)}).")
+        return None, None, None
+
+    # Pages are assumed to be in order; select the page at the adjusted (1-indexed) position.
+    bhl_page_id = pages[target_order - 1].get("PageID")
+    bhl_item_id = result[0].get("ItemID")
+    bhl_biblio_id = result[0].get("TitleID")
+    return bhl_page_id, bhl_item_id, bhl_biblio_id
+
 def generate_metadata(category_name):
-    #files = get_files_in_category(category_name)
-    files = ["A monograph of the Capitonidæ, or scansorial barbets (Pl. (LII)) BHL47772817.jpg"]
+    files = get_files_in_category(category_name)
     publication_qid, publication_title, inception_date = find_publication_from_category(category_name)
     rows = []
-    
     url_printed = False
+
     for file in tqdm(files):
         wikitext = get_commons_wikitext(file)
-        # SKIP non-BHL templated files
+        
+        # Initialize variables in case they are not set later.
+        bhl_page_id = ""
+        biblio_id = ""
+        instance_of = ""
+        flickr_id = ""
+        names = ""
+
+        # Check if the file contains the BHL template.
         if "{{BHL" not in wikitext:
-            continue
-        bhl_data = parse_bhl_template(wikitext)
-        instance_of = bhl_data["pagetypes"]
-        biblio_id = bhl_data["titleid"]
-        # | source = https://www.flickr.com/photos/biodivlibrary/20552772278
-        flickr_id = bhl_data["source"].split("/")[-1] if bhl_data["source"] else ""
-        page_id = bhl_data["pageid"]
-        if page_id in BHL_TO_FLICKR_DICT:
-            flickr_id = BHL_TO_FLICKR_DICT[page_id]
+            # If not, but it appears to be an IA source and the flag is set, try to infer.
+            if "BHL Consortium" in wikitext and INFER_FROM_INTERNET_ARCHIVE:
+                m = re.search(r'https://archive\.org/stream/([^#]+)#page/n(\d+)', wikitext)
+                if m:
+                    ia_url = m.group(0)  # The full URL.
+                    inferred_page_id, inferred_item_id, inferred_biblio_id = infer_bhl_page_id_from_ia_url(ia_url, INTERNET_ARCHIVE_OFFSET)
+                    if inferred_page_id:
+                        bhl_page_id = str(inferred_page_id)
+                        biblio_id = str(inferred_biblio_id)
+                    else:
+                        bhl_page_id = ""
+                        biblio_id = ""
+                else:
+                    continue  # If no IA URL can be extracted, skip this file.
+            else:
+                continue  # Skip files that are neither BHL templated nor inferable.
+        else:
+            # Parse the BHL template from the wikitext.
+            bhl_data = parse_bhl_template(wikitext)
+            bhl_page_id = bhl_data.get("pageid", "")
+            instance_of = bhl_data.get("pagetypes", "")
+            biblio_id = bhl_data.get("titleid", "")
+            flickr_id = bhl_data.get("source", "").split("/")[-1] if bhl_data.get("source") else ""
+            names = bhl_data.get("names", "")
+
+        # Overwrite flickr_id if we have a mapping.
+        if bhl_page_id in BHL_TO_FLICKR_DICT:
+            flickr_id = BHL_TO_FLICKR_DICT[bhl_page_id]
+
+        # Print URL and prompt for additional metadata on the first encounter.
         if not url_printed:
             bhl_url = f"{BHL_BASE_URL}/bibliography/{biblio_id}"
             print(f"Visit the BHL page for this category: {bhl_url}")
@@ -45,33 +164,18 @@ def generate_metadata(category_name):
                 collection = input("Enter the Collection (if not auto-detected): ").strip()
             if not sponsor:
                 sponsor = input("Enter the Sponsor (if not auto-detected): ").strip()
-            if ILLUSTRATOR != "":
-                illustrator = ILLUSTRATOR
-            else:
-                illustrator = input("Enter the Illustrator QID: ").strip()
-            if PAINTER != "":
-                painter = PAINTER
-            else:
-                painter = input("Enter the Painter QID: ").strip()
-            
-            if ENGRAVER != "":
-                engraver = ENGRAVER
-            else:
-                engraver = input("Enter the Engraver QID: ").strip()
-            if LITHOGRAPHER != "":
-                lithographer = LITHOGRAPHER
-            else:
-                lithographer = input("Enter the Lithographer QID: ").strip()
-            if REF_URL_FOR_AUTHORS != "":
-                ref_url_for_authors = REF_URL_FOR_AUTHORS
-            else: 
-                ref_url_for_authors = input("Enter the Ref URL for the authors: ").strip()
+            illustrator = ILLUSTRATOR if ILLUSTRATOR != "" else input("Enter the Illustrator QID: ").strip()
+            painter = PAINTER if PAINTER != "" else input("Enter the Painter QID: ").strip()
+            engraver = ENGRAVER if ENGRAVER != "" else input("Enter the Engraver QID: ").strip()
+            lithographer = LITHOGRAPHER if LITHOGRAPHER != "" else input("Enter the Lithographer QID: ").strip()
+            ref_url_for_authors = REF_URL_FOR_AUTHORS if REF_URL_FOR_AUTHORS != "" else input("Enter the Ref URL for the authors: ").strip()
             url_printed = True
 
         flickr_tags = get_flickr_tags(flickr_id)
+        # Create the metadata row. For files with the BHL template, we include names; otherwise, leave blank.
         row = {
             "File": file or "",
-            "BHL Page ID": bhl_data["pageid"] or "",
+            "BHL Page ID": bhl_page_id or "",
             "Instance of": instance_of or "",
             "Published In": publication_title or "",
             "Published In QID": publication_qid or "",
@@ -84,13 +188,14 @@ def generate_metadata(category_name):
             "Painter": painter or "",
             "Ref URL for Authors": ref_url_for_authors or "",
             "Inception": inception_date or "",
-            "Names": bhl_data["names"] or "",
+            "Names": names if "{{BHL" in wikitext else "",
             "Flickr ID": flickr_id or "",
             "Flickr Tags": flickr_tags or ""
         }
         rows.append(row)
     
     return rows
+
 
 def get_flickr_tags(photo_id):
     API_ENDPOINT = "https://www.flickr.com/services/rest/"
