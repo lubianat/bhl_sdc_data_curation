@@ -103,3 +103,9 @@ with output_file.open("w", newline='', encoding="utf-8") as tsvfile:
         writer.writerow(row)
 
 print(f"Master TSV file '{output_file}' has been created with {len(master_rows)} records.")
+
+# Save as BHL:Flickr dict in JSON format
+
+bhl_flickr_dict = {row[3]: row[2] for row in master_rows}
+output_json_file = HERE.parent / "dicts" /  "bhl_flickr_dict.json"
+output_json_file.write_text(json.dumps(bhl_flickr_dict, indent=2))

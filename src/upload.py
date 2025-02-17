@@ -64,14 +64,15 @@ def main(csv_path):
                 mediainfo_id = data
                 media = wbi.mediainfo.get(entity_id=mediainfo_id)
             except Exception as e:
-                logging.error(f"Could not load MediaInfo for File:{file_name}: {e}")
-                continue
+                if "The MW API returned that the entity was missing." in str(e):
+                    media = wbi.mediainfo.new(id=mediainfo_id)
+                else:
+                    logging.error(f"Could not load MediaInfo for File:{file_name}: {e}")
+                    continue
 
             new_statements = []
 
-            # Instance of
-            if not CUSTOM_INSTANCE_OF:
-                add_instance_claim(row, new_statements)
+            add_instance_claim(row, new_statements, media)
 
             # Published in
             if not SKIP_PUBLISHED_IN:
@@ -85,31 +86,34 @@ def main(csv_path):
             add_digital_sponsor_claim(row, new_statements)
             
             add_bhl_id_claim(row, new_statements)
-
-            # Only add illustrator/engraver if "Illustration" is in "Instance of" column
-            if "Illustration" in row.get("Instance of", ""):
-                if CUSTOM_INSTANCE_OF:
-                    # Check claims in SDC
-                    if "P31" in media.claims.get_json():
-                        instance_of_value = media.claims.get_json()["P31"][0]["mainsnak"]["datavalue"]["value"]["id"]
-                        if instance_of_value in ["Q131597974", "Q178659"]:
-                            # Either "Illustrated text" or "Illustration"
-                            add_illustrator_claim(row, new_statements)
-                            add_engraver_claim(row, new_statements)
-                            add_lithographer_claim(row, new_statements)
-                            add_painter_claim(row, new_statements)
-
-
-                        elif PHOTOGRAPHS_ONLY or instance_of_value == "Q125191":
-                            # e.g. for photos, skip or handle differently
-                            pass
-                else:
+            add_flickr_id_claim(row, new_statements)
+            if "P31" in media.claims.get_json():
+                instance_of_value = media.claims.get_json()["P31"][0]["mainsnak"]["datavalue"]["value"]["id"]
+                if instance_of_value in ["Q178659", "Q131597974"]:
+                    # Either "Illustrated text" or "Illustration"
                     add_illustrator_claim(row, new_statements)
                     add_engraver_claim(row, new_statements)
                     add_lithographer_claim(row, new_statements)
                     add_painter_claim(row, new_statements)
+                    add_depicts_claim(row, new_statements)
 
-            add_depicts_claim(row, new_statements)
+
+
+                elif PHOTOGRAPHS_ONLY or instance_of_value == "Q125191":
+                    # e.g. for photos, skip or handle differently
+                    pass
+
+            else:
+                if ALL_DRAWINGS:
+                    add_illustrator_claim(row, new_statements)
+                    add_engraver_claim(row, new_statements)
+                    add_lithographer_claim(row, new_statements)
+                    add_painter_claim(row, new_statements)
+                    add_depicts_claim(row, new_statements)
+                elif PHOTOGRAPHS_ONLY or instance_of_value == "Q125191":
+                    # e.g. for photos, skip or handle differently
+                    pass
+
 
             if not SKIP_DATES:
                 add_inception_claim(row, new_statements)
@@ -151,21 +155,29 @@ def get_qid_from_taxon_name(taxon_name):
     return ""
 
 def add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT):
-    names = row.get("Names", "").strip()
+    names = row.get("Names", "").strip().split("; ")
     if set_prominent:
         rank = "preferred"
     else:
         rank = "normal"
     if names:
-        qid = get_qid_from_taxon_name(names)
-        if qid:
-            claim_depicts = Item(prop_nr="P180", value=qid, rank=rank)
-            references = References()
-            ref_obj = Reference()
-            ref_obj.add(Item(prop_nr="P887", value="Q131783016")) # Inferr
-            references.add(ref_obj)
-            claim_depicts.references = references
-            new_statements.append(claim_depicts)
+        bhl_page_id = row.get("BHL Page ID", "").strip()
+        if bhl_page_id:
+           for name in names:
+            if len(name.split(" ")) == 1:
+                # If only one word, it's probably a genus, skip
+                continue
+            qid = get_qid_from_taxon_name(name)
+            if qid:
+
+                claim_depicts = Item(prop_nr="P180", value=qid, rank=rank)
+                references = References()
+                ref_obj = Reference()
+                ref_obj.add(Item(prop_nr="P887", value="Q132359710")) # Inferred from the BHL OCR
+                ref_obj.add(URL(prop_nr="P854", value=f"https://biodiversitylibrary.org/page/{bhl_page_id}"))
+                references.add(ref_obj)
+                claim_depicts.references = references
+                new_statements.append(claim_depicts)
     flickr_tags = row.get("Flickr Tags", "").strip().split(",")
     flickr_id = row.get("Flickr ID", "").strip()
     if flickr_tags:
@@ -212,7 +224,7 @@ def add_painter_claim(row, new_statements):
     if painter:
         qualifiers = Qualifiers()
         qualifiers.add(Item(prop_nr="P518", value="Q112134971"))  # analog work
-        qualifiers.add(Item(prop_nr="P170", value="Q1028181"))    # painter
+        qualifiers.add(Item(prop_nr="P3831", value="Q1028181"))    # painter
 
         references = References()
         ref_url = row.get("Ref URL for Authors", "").strip()
@@ -295,6 +307,11 @@ def add_engraver_claim(row, new_statements):
         )
         new_statements.append(claim_engraver)
 
+def add_flickr_id_claim(row, new_statements):
+    flickr_id = row.get("Flickr ID", "").strip()
+    if flickr_id:
+        claim_flickr = ExternalID(prop_nr="P12120", value=flickr_id)
+        new_statements.append(claim_flickr)
 def add_bhl_id_claim(row, new_statements):
     bhl_page_id = row.get("BHL Page ID", "").strip()
     if bhl_page_id:
@@ -380,18 +397,25 @@ def get_institution_as_a_qid(collection):
         collection = INSTITUTIONS_DICT[collection]
     return collection
 
-def add_instance_claim(row, new_statements):
+def add_instance_claim(row, new_statements, media):
     global ALL_DRAWINGS
+    global SKIP_EXISTING_INSTANCE_OF
+    if SKIP_EXISTING_INSTANCE_OF:
+        if "P31" in media.claims.get_json():
+                return 1
     if ALL_DRAWINGS == True:
         claim_instance_of = Item(prop_nr="P31", value="Q178659")
         new_statements.append(claim_instance_of)
         return 1
+
     instance_of = row.get("Instance of", "").strip()
     if instance_of:
         if instance_of in INSTANCE_OF_DICT:
             instance_of = INSTANCE_OF_DICT[instance_of]
+            
         claim_instance_of = Item(prop_nr="P31", value=instance_of)
         new_statements.append(claim_instance_of)
+        return 1
 
 def add_published_in_claim(row, new_statements):
     published_in = row.get("Published In QID", "").strip()

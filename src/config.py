@@ -1,17 +1,18 @@
-CATEGORY_RAW = "Histoire naturelle des perroquets (1805).jpg"
-TEST = True
+CATEGORY_RAW = "Category:A_monograph_of_the_Capitonidæ,_or_scansorial_barbets"
+TEST = False
 ALL_DRAWINGS = True
 SET_PROMINENT = True
 
-CUSTOM_INSTANCE_OF = False
-PHOTOGRAPHS_ONLY = False
 SKIP_PUBLISHED_IN = False
-SKIP_DATES = False
+SKIP_DATES = True
+
+SKIP_EXISTING_INSTANCE_OF = True
+PHOTOGRAPHS_ONLY = False
 ADD_EMPTY_IF_SPONSOR_MISSING = True
 
 
-ILLUSTRATOR = ""
-PAINTER = "Q3158196"
+ILLUSTRATOR = "Q1335286"
+PAINTER = ""
 ENGRAVER = ""
 LITHOGRAPHER = ""
 REF_URL_FOR_AUTHORS = ""
