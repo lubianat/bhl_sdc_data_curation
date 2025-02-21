@@ -1,16 +1,6 @@
-import random
 import requests
 
 
-def generate_custom_edit_summary(test_edit=False):
-    # As per https://www.wikidata.org/wiki/Wikidata:Edit_groups/Adding_a_tool
-    random_hex = f"{random.randrange(0, 2**48):x}"
-    editgroup_snippet = f"([[:toolforge:editgroups-commons/b/CB/{random_hex}|details]])"
-    if test_edit:
-         return f"SDC import (BHL Model v0.1.2, manual curation - tests)"
-    else:
-        return f"SDC import (BHL Model v0.1.2, manual curation) {editgroup_snippet}"
-    
 def get_media_info_id(file_name):
     API_URL = "https://commons.wikimedia.org/w/api.php"
     if "File:" in file_name:

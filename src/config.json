@@ -1,0 +1,23 @@
+{
+    "CATEGORY_RAW": "Vergleichende Naturbeschreibung der S\u00e4ugethiere",
+    "TEST": false,
+    "ALL_DRAWINGS": true,
+    "SKIP_CREATOR": true,
+    "SKIP_DATES": false,
+    "ILLUSTRATOR": "",
+    "PAINTER": "",
+    "ENGRAVER": "",
+    "LITHOGRAPHER": "",
+    "REF_URL_FOR_AUTHORS": "",
+    "COMMONS_API_ENDPOINT": "https://commons.wikimedia.org/w/api.php",
+    "WIKIDATA_SPARQL_ENDPOINT": "https://query.wikidata.org/sparql",
+    "BHL_BASE_URL": "https://www.biodiversitylibrary.org",
+    "INFER_BHL_PAGE_FROM_FLICKR_ID": false,
+    "INFER_FROM_INTERNET_ARCHIVE": false,
+    "INTERNET_ARCHIVE_OFFSET": -1,
+    "PHOTOGRAPHS_ONLY": false,
+    "SET_PROMINENT": false,
+    "SKIP_PUBLISHED_IN": false,
+    "ADD_EMPTY_IF_SPONSOR_MISSING": false,
+    "SKIP_EXISTING_INSTANCE_OF": false
+}

@@ -6,7 +6,15 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 from login import *
-from config import *
+import re
+import requests
+import json
+from pathlib import Path
+import pandas as pd
+from bs4 import BeautifulSoup
+from tqdm import tqdm
+from login import *
+
 
 # Directories for data and dictionaries
 HERE = Path(__file__).parent
@@ -16,11 +24,213 @@ API_CACHE = {}
 
 # Load the dictionary mapping BHL page IDs to Flickr IDs
 BHL_TO_FLICKR_DICT = json.loads(DICTS.joinpath("bhl_flickr_dict.json").read_text())
+def load_config():
+    with open(HERE / "config.json", "r") as config_file:
+        return json.load(config_file)
 
-# Globals assumed to be defined in your config module:
-# INFER_FROM_INTERNET_ARCHIVE = True
-# INTERNET_ARCHIVE_OFFSET = 5   # Example offset value
-# BHL_API_KEY is also imported from config
+config = load_config()
+CATEGORY_RAW = config["CATEGORY_RAW"]
+TEST = config["TEST"]
+ALL_DRAWINGS = config["ALL_DRAWINGS"]
+SKIP_CREATOR = config["SKIP_CREATOR"]
+INFER_BHL_PAGE_FROM_FLICKR_ID = config["INFER_BHL_PAGE_FROM_FLICKR_ID"]
+INFER_FROM_INTERNET_ARCHIVE = config["INFER_FROM_INTERNET_ARCHIVE"]
+INTERNET_ARCHIVE_OFFSET = config["INTERNET_ARCHIVE_OFFSET"]
+PHOTOGRAPHS_ONLY = config["PHOTOGRAPHS_ONLY"]
+ILLUSTRATOR = config["ILLUSTRATOR"]
+PAINTER = config["PAINTER"]
+ENGRAVER = config["ENGRAVER"]
+LITHOGRAPHER = config["LITHOGRAPHER"]
+REF_URL_FOR_AUTHORS = config["REF_URL_FOR_AUTHORS"]
+COMMONS_API_ENDPOINT = config["COMMONS_API_ENDPOINT"]
+WIKIDATA_SPARQL_ENDPOINT = config["WIKIDATA_SPARQL_ENDPOINT"]
+BHL_BASE_URL = config["BHL_BASE_URL"]
+SET_PROMINENT = config["SET_PROMINENT"]
+SKIP_PUBLISHED_IN = config["SKIP_PUBLISHED_IN"]
+SKIP_DATES = config["SKIP_DATES"]
+ADD_EMPTY_IF_SPONSOR_MISSING = config["ADD_EMPTY_IF_SPONSOR_MISSING"]
+SKIP_EXISTING_INSTANCE_OF = config["SKIP_EXISTING_INSTANCE_OF"]
+TEST = config["TEST"]
+
+CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
+
+def generate_metadata(category_name, app_mode=False):
+    global CATEGORY_NAME
+    global CATEGORY_RAW
+    global TEST
+    global ALL_DRAWINGS
+    global SKIP_CREATOR
+    global INFER_BHL_PAGE_FROM_FLICKR_ID
+    global INFER_FROM_INTERNET_ARCHIVE
+    global INTERNET_ARCHIVE_OFFSET
+    global PHOTOGRAPHS_ONLY
+    global ILLUSTRATOR
+    global PAINTER
+    global ENGRAVER
+    global LITHOGRAPHER
+    global REF_URL_FOR_AUTHORS
+    global COMMONS_API_ENDPOINT
+    global WIKIDATA_SPARQL_ENDPOINT
+    global BHL_BASE_URL
+    global SET_PROMINENT
+    global SKIP_PUBLISHED_IN
+    global SKIP_DATES
+    global ADD_EMPTY_IF_SPONSOR_MISSING
+    global SKIP_EXISTING_INSTANCE_OF
+    global TEST
+    
+        
+    # Load configuration from config.json
+    config = load_config()
+    CATEGORY_RAW = config["CATEGORY_RAW"]
+    TEST = config["TEST"]
+    ALL_DRAWINGS = config["ALL_DRAWINGS"]
+    SKIP_CREATOR = config["SKIP_CREATOR"]
+    INFER_BHL_PAGE_FROM_FLICKR_ID = config["INFER_BHL_PAGE_FROM_FLICKR_ID"]
+    INFER_FROM_INTERNET_ARCHIVE = config["INFER_FROM_INTERNET_ARCHIVE"]
+    INTERNET_ARCHIVE_OFFSET = config["INTERNET_ARCHIVE_OFFSET"]
+    PHOTOGRAPHS_ONLY = config["PHOTOGRAPHS_ONLY"]
+    ILLUSTRATOR = config["ILLUSTRATOR"]
+    PAINTER = config["PAINTER"]
+    ENGRAVER = config["ENGRAVER"]
+    LITHOGRAPHER = config["LITHOGRAPHER"]
+    REF_URL_FOR_AUTHORS = config["REF_URL_FOR_AUTHORS"]
+    COMMONS_API_ENDPOINT = config["COMMONS_API_ENDPOINT"]
+    WIKIDATA_SPARQL_ENDPOINT = config["WIKIDATA_SPARQL_ENDPOINT"]
+    BHL_BASE_URL = config["BHL_BASE_URL"]
+    SET_PROMINENT = config["SET_PROMINENT"]
+    SKIP_PUBLISHED_IN = config["SKIP_PUBLISHED_IN"]
+    SKIP_DATES = config["SKIP_DATES"]
+    ADD_EMPTY_IF_SPONSOR_MISSING = config["ADD_EMPTY_IF_SPONSOR_MISSING"]
+    SKIP_EXISTING_INSTANCE_OF = config["SKIP_EXISTING_INSTANCE_OF"]
+    TEST = config["TEST"]
+
+    CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
+
+    files = get_files_in_category(category_name)
+    publication_qid, publication_title, inception_date = find_publication_from_category(category_name)
+    rows = []
+    inferred_collection = False
+    processed_counter = 0
+    processed_creators = False
+
+    for file in tqdm(files):
+        if TEST and processed_counter >= 3:
+            break
+        processed_counter+=1
+        wikitext = get_commons_wikitext(file)
+        
+        # Initialize variables in case they are not set later.
+        bhl_page_id = ""
+        biblio_id = ""
+        instance_of = ""
+        flickr_id = ""
+        names = ""
+
+        # Check if the file contains the BHL template.
+        if "{{BHL" not in wikitext:
+            # If not, but it appears to be an IA source and the flag is set, try to infer.
+            if "BHL Consortium" in wikitext and INFER_FROM_INTERNET_ARCHIVE:
+                m = re.search(r'https://archive\.org/stream/([^#]+)#page/n(\d+)', wikitext)
+                if m:
+                    ia_url = m.group(0)  # The full URL.
+                    inferred_page_id, inferred_item_id, inferred_biblio_id = infer_bhl_page_id_from_ia_url(ia_url, INTERNET_ARCHIVE_OFFSET)
+                    if inferred_page_id:
+                        bhl_page_id = str(inferred_page_id)
+                        biblio_id = str(inferred_biblio_id)
+                    else:
+                        bhl_page_id = ""
+                        biblio_id = ""
+                else:
+                    continue  # If no IA URL can be extracted, skip this file.
+
+            # If the file has a Flickr URL in the wikitext, extract the ID.
+            elif "https://www.flickr.com/photos/biodivlibrary/" in wikitext and INFER_BHL_PAGE_FROM_FLICKR_ID:
+                # If the file has a Flickr URL in the wikitext, extract the ID.
+                m = re.search(r'https://www\.flickr\.com/photos/biodivlibrary/(\d+)', wikitext)
+                if m:
+                    flickr_id = m.group(1)
+                    flickr_id = flickr_id.split("/")[0]  # Remove any additional URL components.
+                
+                # Check the reverse of the BHL_TO_FLICKR_DICT to see if we have a mapping.
+                if flickr_id in BHL_TO_FLICKR_DICT.values():
+                    biblio_id = find_publication_from_category(category_name, return_bib_id=True)
+
+                    bhl_page_id = next(key for key, value in BHL_TO_FLICKR_DICT.items() if value == flickr_id)
+            else:
+                continue
+        else:
+            # Parse the BHL template from the wikitext.
+            bhl_data = parse_bhl_template(wikitext)
+            bhl_page_id = bhl_data.get("pageid", "")
+            instance_of = bhl_data.get("pagetypes", "")
+            biblio_id = bhl_data.get("titleid", "")
+            flickr_id = bhl_data.get("source", "").split("/")[-1] if bhl_data.get("source") else ""
+            names = bhl_data.get("names", "")
+
+        # Overwrite flickr_id if we have a mapping.
+        if bhl_page_id in BHL_TO_FLICKR_DICT:
+            flickr_id = BHL_TO_FLICKR_DICT[bhl_page_id]
+
+        # Print URL and prompt for additional metadata on the first encounter.
+        if not inferred_collection:
+            bhl_url = f"{BHL_BASE_URL}/bibliography/{biblio_id}"
+            print(f"Visit the BHL page for this category: {bhl_url}")
+            inferred_collection = True
+
+            collection, sponsor = scrape_bhl_details(bhl_url)
+            print(f"Detected Collection: {collection}")
+            print(f"Detected Sponsor: {sponsor}")
+        
+        
+    
+        if not app_mode:
+
+            if not collection:
+                collection = input("Enter the Collection (if not auto-detected): ").strip()
+            if not sponsor:
+                sponsor = input("Enter the Sponsor (if not auto-detected): ").strip()
+            if not processed_creators:
+                illustrator = ILLUSTRATOR if ILLUSTRATOR != "" else input("Enter the Illustrator QID: ").strip()
+                painter = PAINTER if PAINTER != "" else input("Enter the Painter QID: ").strip()
+                engraver = ENGRAVER if ENGRAVER != "" else input("Enter the Engraver QID: ").strip()
+                lithographer = LITHOGRAPHER if LITHOGRAPHER != "" else input("Enter the Lithographer QID: ").strip()
+                ref_url_for_authors = REF_URL_FOR_AUTHORS if REF_URL_FOR_AUTHORS != "" else input("Enter the Ref URL for the authors: ").strip()
+                processed_creators = True
+
+        else:
+        # In app mode, simply use the current config values (or set to empty/default)
+    
+            illustrator = ILLUSTRATOR
+            painter = PAINTER
+            engraver = ENGRAVER
+            lithographer = LITHOGRAPHER
+            ref_url_for_authors = REF_URL_FOR_AUTHORS
+
+        flickr_tags = get_flickr_tags(flickr_id)
+            # Create the metadata row. For files with the BHL template, we include names; otherwise, leave blank.
+        row = {
+            "File": file or "",
+            "BHL Page ID": bhl_page_id or "",
+            "Instance of": instance_of or "",
+            "Published In": publication_title or "",
+            "Published In QID": publication_qid or "",
+            "Collection": collection or "",
+            "Sponsor": sponsor or "",
+            "Bibliography ID": biblio_id or "",
+            "Illustrator": illustrator or "",
+            "Engraver": engraver or "",
+            "Lithographer": lithographer or "",
+            "Painter": painter or "",
+            "Ref URL for Authors": ref_url_for_authors or "",
+            "Inception": inception_date or "",
+            "Names": names if "{{BHL" in wikitext else "",
+            "Flickr ID": flickr_id or "",
+            "Flickr Tags": flickr_tags or ""
+        }
+        rows.append(row)
+    
+    return rows
 
 def infer_bhl_page_id_from_ia_url(ia_url, offset=0, ):
     """
@@ -105,97 +315,6 @@ def infer_bhl_page_id_from_ia_url(ia_url, offset=0, ):
     bhl_item_id = result[0].get("ItemID")
     bhl_biblio_id = result[0].get("TitleID")
     return bhl_page_id, bhl_item_id, bhl_biblio_id
-
-def generate_metadata(category_name):
-    files = get_files_in_category(category_name)
-    publication_qid, publication_title, inception_date = find_publication_from_category(category_name)
-    rows = []
-    url_printed = False
-
-    for file in tqdm(files):
-        wikitext = get_commons_wikitext(file)
-        
-        # Initialize variables in case they are not set later.
-        bhl_page_id = ""
-        biblio_id = ""
-        instance_of = ""
-        flickr_id = ""
-        names = ""
-
-        # Check if the file contains the BHL template.
-        if "{{BHL" not in wikitext:
-            # If not, but it appears to be an IA source and the flag is set, try to infer.
-            if "BHL Consortium" in wikitext and INFER_FROM_INTERNET_ARCHIVE:
-                m = re.search(r'https://archive\.org/stream/([^#]+)#page/n(\d+)', wikitext)
-                if m:
-                    ia_url = m.group(0)  # The full URL.
-                    inferred_page_id, inferred_item_id, inferred_biblio_id = infer_bhl_page_id_from_ia_url(ia_url, INTERNET_ARCHIVE_OFFSET)
-                    if inferred_page_id:
-                        bhl_page_id = str(inferred_page_id)
-                        biblio_id = str(inferred_biblio_id)
-                    else:
-                        bhl_page_id = ""
-                        biblio_id = ""
-                else:
-                    continue  # If no IA URL can be extracted, skip this file.
-            else:
-                continue  # Skip files that are neither BHL templated nor inferable.
-        else:
-            # Parse the BHL template from the wikitext.
-            bhl_data = parse_bhl_template(wikitext)
-            bhl_page_id = bhl_data.get("pageid", "")
-            instance_of = bhl_data.get("pagetypes", "")
-            biblio_id = bhl_data.get("titleid", "")
-            flickr_id = bhl_data.get("source", "").split("/")[-1] if bhl_data.get("source") else ""
-            names = bhl_data.get("names", "")
-
-        # Overwrite flickr_id if we have a mapping.
-        if bhl_page_id in BHL_TO_FLICKR_DICT:
-            flickr_id = BHL_TO_FLICKR_DICT[bhl_page_id]
-
-        # Print URL and prompt for additional metadata on the first encounter.
-        if not url_printed:
-            bhl_url = f"{BHL_BASE_URL}/bibliography/{biblio_id}"
-            print(f"Visit the BHL page for this category: {bhl_url}")
-            collection, sponsor = scrape_bhl_details(bhl_url)
-            print(f"Detected Collection: {collection}")
-            print(f"Detected Sponsor: {sponsor}")
-            if not collection:
-                collection = input("Enter the Collection (if not auto-detected): ").strip()
-            if not sponsor:
-                sponsor = input("Enter the Sponsor (if not auto-detected): ").strip()
-            illustrator = ILLUSTRATOR if ILLUSTRATOR != "" else input("Enter the Illustrator QID: ").strip()
-            painter = PAINTER if PAINTER != "" else input("Enter the Painter QID: ").strip()
-            engraver = ENGRAVER if ENGRAVER != "" else input("Enter the Engraver QID: ").strip()
-            lithographer = LITHOGRAPHER if LITHOGRAPHER != "" else input("Enter the Lithographer QID: ").strip()
-            ref_url_for_authors = REF_URL_FOR_AUTHORS if REF_URL_FOR_AUTHORS != "" else input("Enter the Ref URL for the authors: ").strip()
-            url_printed = True
-
-        flickr_tags = get_flickr_tags(flickr_id)
-        # Create the metadata row. For files with the BHL template, we include names; otherwise, leave blank.
-        row = {
-            "File": file or "",
-            "BHL Page ID": bhl_page_id or "",
-            "Instance of": instance_of or "",
-            "Published In": publication_title or "",
-            "Published In QID": publication_qid or "",
-            "Collection": collection or "",
-            "Sponsor": sponsor or "",
-            "Bibliography ID": biblio_id or "",
-            "Illustrator": illustrator or "",
-            "Engraver": engraver or "",
-            "Lithographer": lithographer or "",
-            "Painter": painter or "",
-            "Ref URL for Authors": ref_url_for_authors or "",
-            "Inception": inception_date or "",
-            "Names": names if "{{BHL" in wikitext else "",
-            "Flickr ID": flickr_id or "",
-            "Flickr Tags": flickr_tags or ""
-        }
-        rows.append(row)
-    
-    return rows
-
 
 def get_flickr_tags(photo_id):
     API_ENDPOINT = "https://www.flickr.com/services/rest/"
@@ -305,7 +424,7 @@ def parse_bhl_template(wikitext):
         results["names"] = get_taxon_names_from_api(pageid)
     return results
 
-def find_publication_from_category(category_name):
+def find_publication_from_category(category_name, return_bib_id=False):
     query = f"""
     SELECT ?item ?itemLabel ?publicationDate ?bhl_bib_id ?bhl_item_id
     WHERE
@@ -334,7 +453,11 @@ def find_publication_from_category(category_name):
             qid = results[0].get("item", {}).get("value", "").split("/")[-1]
             label = results[0].get("itemLabel", {}).get("value", "")
             publication_date = results[0].get("publicationDate", {}).get("value", "").split("T")[0]
-            return qid, label, publication_date
+            if return_bib_id:
+                bhl_bib_id = results[0].get("bhl_bib_id", {}).get("value", "")
+                return bhl_bib_id
+            else:
+                return qid, label, publication_date
     except Exception:
         pass
     return "", "", ""

@@ -1,4 +1,3 @@
-from config import *
 import csv
 import logging
 from wikibaseintegrator import wbi_login, WikibaseIntegrator, wbi_enums
@@ -11,15 +10,46 @@ from wikibaseintegrator.datatypes import (
     URL
 )
 from login import *
-from helper import get_media_info_id, generate_custom_edit_summary
+from helper import get_media_info_id
 from tqdm import tqdm
 from pathlib import Path
 from wdcuration import query_wikidata, add_key_and_save_to_independent_dict
 import json 
+import random
 
 HERE = Path(__file__).parent
 DATA = HERE / "data"
 DICTS = HERE / "dicts"
+
+# Load configuration from config.json
+def load_config():
+    with open(HERE / "config.json", "r") as config_file:
+        return json.load(config_file)
+
+# Set configuration as global variables
+config = load_config()
+CATEGORY_RAW = config["CATEGORY_RAW"]
+TEST = config["TEST"]
+ALL_DRAWINGS = config["ALL_DRAWINGS"]
+SKIP_CREATOR = config["SKIP_CREATOR"]
+INFER_BHL_PAGE_FROM_FLICKR_ID = config["INFER_BHL_PAGE_FROM_FLICKR_ID"]
+INFER_FROM_INTERNET_ARCHIVE = config["INFER_FROM_INTERNET_ARCHIVE"]
+INTERNET_ARCHIVE_OFFSET = config["INTERNET_ARCHIVE_OFFSET"]
+PHOTOGRAPHS_ONLY = config["PHOTOGRAPHS_ONLY"]
+ILLUSTRATOR = config["ILLUSTRATOR"]
+PAINTER = config["PAINTER"]
+ENGRAVER = config["ENGRAVER"]
+LITHOGRAPHER = config["LITHOGRAPHER"]
+REF_URL_FOR_AUTHORS = config["REF_URL_FOR_AUTHORS"]
+COMMONS_API_ENDPOINT = config["COMMONS_API_ENDPOINT"]
+WIKIDATA_SPARQL_ENDPOINT = config["WIKIDATA_SPARQL_ENDPOINT"]
+BHL_BASE_URL = config["BHL_BASE_URL"]
+SET_PROMINENT = config["SET_PROMINENT"]
+SKIP_PUBLISHED_IN = config["SKIP_PUBLISHED_IN"]
+SKIP_DATES = config["SKIP_DATES"]
+ADD_EMPTY_IF_SPONSOR_MISSING = config["ADD_EMPTY_IF_SPONSOR_MISSING"]
+SKIP_EXISTING_INSTANCE_OF = config["SKIP_EXISTING_INSTANCE_OF"]
+CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
 
 INSTITUTIONS_DICT = json.loads(DICTS.joinpath("institutions.json").read_text())
 INSTANCE_OF_DICT = json.loads(DICTS.joinpath("instance_of.json").read_text())
@@ -28,6 +58,22 @@ wbi_config['MEDIAWIKI_API_URL'] = 'https://commons.wikimedia.org/w/api.php'
 wbi_config['SPARQL_ENDPOINT_URL'] = 'https://query.wikidata.org/sparql'
 wbi_config['WIKIBASE_URL'] = 'https://commons.wikimedia.org'
 wbi_config['USER_AGENT'] = 'TiagoLubiana (https://meta.wikimedia.org/wiki/User:TiagoLubiana)'
+
+
+def generate_custom_edit_summary(test_edit=False):
+    global SKIP_CREATOR
+    # As per https://www.wikidata.org/wiki/Wikidata:Edit_groups/Adding_a_tool
+    random_hex = f"{random.randrange(0, 2**48):x}"
+    editgroup_snippet = f"([[:toolforge:editgroups-commons/b/CB/{random_hex}|details]])"
+    skip_creator_snippet = ""
+    if SKIP_CREATOR: 
+        skip_creator_snippet = ", skipping creator statements"
+        
+    if test_edit:
+         return f"SDC import (BHL Model v0.1.2, manual curation - tests{skip_creator_snippet})"
+    else:
+        return f"SDC import (BHL Model v0.1.2, manual curation{skip_creator_snippet}) {editgroup_snippet}"
+    
 
 def main(csv_path):
 
@@ -91,10 +137,8 @@ def main(csv_path):
                 instance_of_value = media.claims.get_json()["P31"][0]["mainsnak"]["datavalue"]["value"]["id"]
                 if instance_of_value in ["Q178659", "Q131597974"]:
                     # Either "Illustrated text" or "Illustration"
-                    add_illustrator_claim(row, new_statements)
-                    add_engraver_claim(row, new_statements)
-                    add_lithographer_claim(row, new_statements)
-                    add_painter_claim(row, new_statements)
+                    if not SKIP_CREATOR:
+                        add_creator_statements(row, new_statements)
                     add_depicts_claim(row, new_statements)
 
 
@@ -105,10 +149,8 @@ def main(csv_path):
 
             else:
                 if ALL_DRAWINGS:
-                    add_illustrator_claim(row, new_statements)
-                    add_engraver_claim(row, new_statements)
-                    add_lithographer_claim(row, new_statements)
-                    add_painter_claim(row, new_statements)
+                    if not SKIP_CREATOR:
+                        add_creator_statements(row, new_statements)
                     add_depicts_claim(row, new_statements)
                 elif PHOTOGRAPHS_ONLY or instance_of_value == "Q125191":
                     # e.g. for photos, skip or handle differently
@@ -122,6 +164,7 @@ def main(csv_path):
                 media.claims.add(new_statements, action_if_exists=wbi_enums.ActionIfExists.MERGE_REFS_OR_APPEND)
                 try:
                     if TEST:
+                        print(f"Check contributions on https://commons.wikimedia.org/wiki/Special:Contributions/{USERNAME}")
                         input("Press Enter to write SDC data...")
                     media.write(summary=edit_summary)
                     tqdm.write(f"No errors when trying to update {file_name} with SDC data.")
@@ -129,6 +172,12 @@ def main(csv_path):
                     logging.error(f"Failed to write SDC for {file_name}: {e}")
             else:
                 logging.info(f"No SDC data to add for {file_name}, skipping...")
+
+def add_creator_statements(row, new_statements):
+    add_illustrator_claim(row, new_statements)
+    add_engraver_claim(row, new_statements)
+    add_lithographer_claim(row, new_statements)
+    add_painter_claim(row, new_statements)
 
 def get_qid_from_flickr_binomial_tags(flickr_tags):
     qids = []

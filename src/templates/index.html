@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Metadata Generation Configuration</title>
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+    <script>
+        $(function () {
+            // Setup autocomplete: the dropdown shows "Label (QID)" but on selection the input value is set to the QID.
+            // The label text is shown in an adjacent span.
+            function setupAutocomplete(selector) {
+                $(selector).autocomplete({
+                    source: function (request, response) {
+                        $.ajax({
+                            url: "https://www.wikidata.org/w/api.php",
+                            dataType: "jsonp",
+                            data: {
+                                action: "wbsearchentities",
+                                format: "json",
+                                language: "en",
+                                uselang: "en",
+                                type: "item",
+                                search: request.term
+                            },
+                            success: function (data) {
+                                response($.map(data.search, function (item) {
+                                    return {
+                                        label: item.label + " (" + item.id + ")",
+                                        labelDisplay: item.label,
+                                        qid: item.id,
+                                        value: item.id // input value will be just the QID
+                                    };
+                                }));
+                            }
+                        });
+                    },
+                    minLength: 2,
+                    select: function (event, ui) {
+                        // Set the input value to the QID.
+                        $(this).val(ui.item.qid);
+                        // Update the adjacent span with the label.
+                        $("#" + this.id + "_label").text(ui.item.labelDisplay);
+                        // Store the QID in a data attribute (if needed later).
+                        $(this).data("qid", ui.item.qid);
+                        return false;
+                    }
+                });
+            }
+
+            // Given a QID, fetch its label from Wikidata.
+            function fetchLabelForQID(qid, callback) {
+                $.ajax({
+                    url: "https://www.wikidata.org/w/api.php",
+                    dataType: "jsonp",
+                    data: {
+                        action: "wbgetentities",
+                        ids: qid,
+                        format: "json",
+                        props: "labels",
+                        languages: "en"
+                    },
+                    success: function (data) {
+                        if (data.entities && data.entities[qid] && data.entities[qid].labels && data.entities[qid].labels.en) {
+                            callback(data.entities[qid].labels.en.value);
+                        } else {
+                            callback(null);
+                        }
+                    }
+                });
+            }
+
+            // On page load, if an input already holds a QID from the saved config, fetch and display its label.
+            function updateFieldFromQID(selector) {
+                var input = $(selector);
+                var qid = input.val().trim();
+                if (qid && qid.match(/^Q\d+$/)) {
+                    fetchLabelForQID(qid, function (label) {
+                        if (label) {
+                            // Display the label in the span.
+                            $("#" + input.attr("id") + "_label").text(label);
+                            // Ensure the input value remains the QID.
+                            input.val(qid);
+                            input.data("qid", qid);
+                        }
+                    });
+                }
+            }
+
+            // Setup autocomplete for each field.
+            setupAutocomplete("#ILLUSTRATOR");
+            setupAutocomplete("#ILLUSTRATOR2");
+            setupAutocomplete("#PAINTER");
+            setupAutocomplete("#ENGRAVER");
+            setupAutocomplete("#LITHOGRAPHER");
+
+            // On page load, update the display for fields that already have a QID.
+            updateFieldFromQID("#ILLUSTRATOR");
+            updateFieldFromQID("#ILLUSTRATOR2");
+            updateFieldFromQID("#PAINTER");
+            updateFieldFromQID("#ENGRAVER");
+            updateFieldFromQID("#LITHOGRAPHER");
+
+            // No extra submit handler is needed because the input value is already the QID.
+        });
+
+        // Shows a loading indicator when the form is submitted.
+        function showLoading() {
+            document.getElementById("loading").style.display = "block";
+        }
+
+        // Sets the form action and submits the form.
+        function submitForm(action) {
+            const form = document.getElementById("configForm");
+            form.action = action;
+            form.submit();
+        }
+    </script>
+    <style>
+        #loading {
+            display: none;
+            font-weight: bold;
+            color: red;
+        }
+
+        .field-wrapper {
+            display: flex;
+            align-items: center;
+        }
+
+        .field-wrapper span.label-display {
+            margin-left: 10px;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Enter Configuration Values</h1>
+    <form id="configForm" method="post" onsubmit="showLoading()">
+        <label for="CATEGORY_RAW">CATEGORY_RAW:</label>
+        <input type="text" id="CATEGORY_RAW" name="CATEGORY_RAW" size="80" value="{{ config.CATEGORY_RAW }}" required>
+        <br><br>
+
+        <label><input type="checkbox" name="TEST" {% if config.TEST %}checked{% endif %}> TEST</label>
+        <br>
+        <label><input type="checkbox" name="ALL_DRAWINGS" {% if config.ALL_DRAWINGS %}checked{% endif %}>
+            ALL_DRAWINGS</label>
+        <br>
+        <label><input type="checkbox" name="SKIP_CREATOR" {% if config.SKIP_CREATOR %}checked{% endif %}>
+            SKIP_CREATOR</label>
+        <br>
+        <label><input type="checkbox" name="SKIP_DATES" {% if config.SKIP_DATES %}checked{% endif %}> SKIP_DATES</label>
+        <br>
+        <label><input type="checkbox" name="INFER_BHL_PAGE_FROM_FLICKR_ID" {% if config.INFER_BHL_PAGE_FROM_FLICKR_ID
+                %}checked{% endif %}> INFER_BHL_PAGE_FROM_FLICKR_ID</label>
+        <br>
+        <label><input type="checkbox" name="INFER_FROM_INTERNET_ARCHIVE" {% if config.INFER_FROM_INTERNET_ARCHIVE
+                %}checked{% endif %}> INFER_FROM_INTERNET_ARCHIVE</label>
+        <br>
+        <label for="INTERNET_ARCHIVE_OFFSET">INTERNET_ARCHIVE_OFFSET:</label>
+        <input type="number" id="INTERNET_ARCHIVE_OFFSET" name="INTERNET_ARCHIVE_OFFSET"
+            value="{{ config.INTERNET_ARCHIVE_OFFSET }}">
+        <br>
+        <label><input type="checkbox" name="PHOTOGRAPHS_ONLY" {% if config.PHOTOGRAPHS_ONLY %}checked{% endif %}>
+            PHOTOGRAPHS_ONLY</label>
+        <br><br>
+
+        <div class="field-wrapper">
+            <label for="ILLUSTRATOR">ILLUSTRATOR:</label>
+            <input type="text" id="ILLUSTRATOR" name="ILLUSTRATOR" value="{{ config.ILLUSTRATOR }}">
+            <span class="label-display" id="ILLUSTRATOR_label"></span>
+        </div>
+        <br>
+        <div class="field-wrapper">
+            <label for="ILLUSTRATOR2">ILLUSTRATOR 2 (if double):</label>
+            <input type="text" id="ILLUSTRATOR2" name="ILLUSTRATOR2" value="{{ config.ILLUSTRATOR2 }}">
+            <span class="label-display" id="ILLUSTRATOR2_label"></span>
+        </div>
+        <br>
+        <div class="field-wrapper">
+            <label for="PAINTER">PAINTER:</label>
+            <input type="text" id="PAINTER" name="PAINTER" value="{{ config.PAINTER }}">
+            <span class="label-display" id="PAINTER_label"></span>
+        </div>
+        <br>
+        <div class="field-wrapper">
+            <label for="ENGRAVER">ENGRAVER:</label>
+            <input type="text" id="ENGRAVER" name="ENGRAVER" value="{{ config.ENGRAVER }}">
+            <span class="label-display" id="ENGRAVER_label"></span>
+        </div>
+        <br>
+        <div class="field-wrapper">
+            <label for="LITHOGRAPHER">LITHOGRAPHER:</label>
+            <input type="text" id="LITHOGRAPHER" name="LITHOGRAPHER" value="{{ config.LITHOGRAPHER }}">
+            <span class="label-display" id="LITHOGRAPHER_label"></span>
+        </div>
+        <br>
+
+        <label for="REF_URL_FOR_AUTHORS">REF_URL_FOR_AUTHORS:</label>
+        <input type="text" id="REF_URL_FOR_AUTHORS" name="REF_URL_FOR_AUTHORS" value="{{ config.REF_URL_FOR_AUTHORS }}">
+        <br><br>
+        <label for="COMMONS_API_ENDPOINT">COMMONS_API_ENDPOINT:</label>
+        <input type="text" id="COMMONS_API_ENDPOINT" name="COMMONS_API_ENDPOINT"
+            value="{{ config.COMMONS_API_ENDPOINT }}" size="80">
+        <br><br>
+        <label for="WIKIDATA_SPARQL_ENDPOINT">WIKIDATA_SPARQL_ENDPOINT:</label>
+        <input type="text" id="WIKIDATA_SPARQL_ENDPOINT" name="WIKIDATA_SPARQL_ENDPOINT"
+            value="{{ config.WIKIDATA_SPARQL_ENDPOINT }}" size="80">
+        <br><br>
+        <label for="BHL_BASE_URL">BHL_BASE_URL:</label>
+        <input type="text" id="BHL_BASE_URL" name="BHL_BASE_URL" value="{{ config.BHL_BASE_URL }}" size="80">
+        <br><br>
+
+        <input type="button" value="Generate Metadata" onclick="submitForm('{{ url_for('index') }}')">
+        <input type="button" value="Upload Data" onclick="submitForm('{{ url_for('upload') }}')">
+    </form>
+
+    <div id="loading">Generating metadata, please wait...</div>
+
+    {% if message %}
+    <p>{{ message }}</p>
+    <p>Output file: <a href="{{ url_for('download_file', filename=output_file) }}">Download {{ output_file }}</a></p>
+    {% endif %}
+</body>
+
+</html>
