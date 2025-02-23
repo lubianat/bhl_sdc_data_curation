@@ -146,9 +146,7 @@
 
         <label><input type="checkbox" name="TEST" {% if config.TEST %}checked{% endif %}> TEST</label>
         <br>
-        <label><input type="checkbox" name="ALL_DRAWINGS" {% if config.ALL_DRAWINGS %}checked{% endif %}>
-            ALL_DRAWINGS</label>
-        <br>
+
         <label><input type="checkbox" name="SKIP_CREATOR" {% if config.SKIP_CREATOR %}checked{% endif %}>
             SKIP_CREATOR</label>
         <br>
@@ -167,6 +165,9 @@
         <label><input type="checkbox" name="PHOTOGRAPHS_ONLY" {% if config.PHOTOGRAPHS_ONLY %}checked{% endif %}>
             PHOTOGRAPHS_ONLY</label>
         <br><br>
+        <label><input type="checkbox" name="ALL_DRAWINGS" {% if config.ALL_DRAWINGS %}checked{% endif %}>
+            ALL_DRAWINGS</label>
+        <br>
 
         <div class="field-wrapper">
             <label for="ILLUSTRATOR">ILLUSTRATOR:</label>

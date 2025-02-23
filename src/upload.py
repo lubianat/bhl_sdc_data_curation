@@ -52,7 +52,6 @@ SKIP_EXISTING_INSTANCE_OF = config["SKIP_EXISTING_INSTANCE_OF"]
 CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
 
 INSTITUTIONS_DICT = json.loads(DICTS.joinpath("institutions.json").read_text())
-INSTANCE_OF_DICT = json.loads(DICTS.joinpath("instance_of.json").read_text())
 
 wbi_config['MEDIAWIKI_API_URL'] = 'https://commons.wikimedia.org/w/api.php'
 wbi_config['SPARQL_ENDPOINT_URL'] = 'https://query.wikidata.org/sparql'
@@ -141,9 +140,7 @@ def main(csv_path):
                         add_creator_statements(row, new_statements)
                     add_depicts_claim(row, new_statements)
 
-
-
-                elif PHOTOGRAPHS_ONLY or instance_of_value == "Q125191":
+                elif PHOTOGRAPHS_ONLY:
                     # e.g. for photos, skip or handle differently
                     pass
 
@@ -152,7 +149,7 @@ def main(csv_path):
                     if not SKIP_CREATOR:
                         add_creator_statements(row, new_statements)
                     add_depicts_claim(row, new_statements)
-                elif PHOTOGRAPHS_ONLY or instance_of_value == "Q125191":
+                elif PHOTOGRAPHS_ONLY:
                     # e.g. for photos, skip or handle differently
                     pass
 
@@ -248,6 +245,14 @@ def add_inception_claim(row, new_statements):
     if inception_str:
         if len(inception_str) != 4:
             inception_str = inception_str[:4]
+        
+        # Test if string is a year
+        if not inception_str.isdigit():
+            logging.warning(f"Invalid year format for inception date: {inception_str}")
+            global SKIP_DATES
+            SKIP_DATES = True
+            return
+        
         formatted_string = f"+{inception_str}-01-01T00:00:00Z"
         claim_inception = Time(
             prop_nr="P571",
@@ -264,6 +269,12 @@ def add_inception_claim(row, new_statements):
         ref_obj = Reference()
         ref_obj.add(Item(prop_nr="P887", value="Q110393725"))
         references.add(ref_obj)
+        item_id = row.get("Item ID", "").strip()
+        if item_id:
+            ref_obj2 = Reference()
+            ref_obj2.add(URL(prop_nr="P854", value=f"https://www.biodiversitylibrary.org/item/{item_id}"))
+            references.add(ref_obj2)
+
         claim_inception.references = references
         new_statements.append(claim_inception)
 
@@ -456,13 +467,12 @@ def add_instance_claim(row, new_statements, media):
         claim_instance_of = Item(prop_nr="P31", value="Q178659")
         new_statements.append(claim_instance_of)
         return 1
-
-    instance_of = row.get("Instance of", "").strip()
-    if instance_of:
-        if instance_of in INSTANCE_OF_DICT:
-            instance_of = INSTANCE_OF_DICT[instance_of]
-            
-        claim_instance_of = Item(prop_nr="P31", value=instance_of)
+    if row.get("Page Types") == "Illustration":
+        claim_instance_of = Item(prop_nr="P31", value="Q178659")
+        new_statements.append(claim_instance_of)
+        return 1
+    if row.get("Page Types") == "Table of Contents":
+        claim_instance_of = Item(prop_nr="P31", value="Q1456936")
         new_statements.append(claim_instance_of)
         return 1
 
@@ -471,8 +481,21 @@ def add_published_in_claim(row, new_statements):
     if published_in:
         qualifiers = Qualifiers()
         qualifiers.add(Item(prop_nr="P518", value="Q112134971"))  # analog work
-        claim_published_in = Item(prop_nr="P1433", value=published_in, qualifiers=qualifiers)
+        references = References()
+        bib_id = row.get("Bibliography ID", "").strip()
+        if bib_id:
+            ref_obj = Reference()
+            ref_obj.add(URL(prop_nr="P854", value=f"https://www.biodiversitylibrary.org/bibliography/{bib_id}"))
+            references.add(ref_obj)
+        claim_published_in = Item(
+            prop_nr="P1433",
+            value=published_in,
+            qualifiers=qualifiers,
+            references=references
+        )
         new_statements.append(claim_published_in)
+
+        
 
 if __name__ == "__main__":
     main(DATA / f"{CATEGORY_NAME.replace(' ', '_')}.tsv")

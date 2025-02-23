@@ -192,7 +192,14 @@ def generate_metadata(category_name, app_mode=False):
                 if flickr_id in BHL_TO_FLICKR_DICT.values():
                     bhl_page_id = next(key for key, value in BHL_TO_FLICKR_DICT.items() if value == flickr_id)
             else:
-                continue
+                # Search for either a BHL page link or pageimage link in the full text
+                # Add all match groups to bhl_ids
+                bhl_ids = re.findall(r'https://www\.biodiversitylibrary\.org/page/(\d+)', wikitext)
+                bhl_ids += re.findall(r'https://www\.biodiversitylibrary\.org/pageimage/(\d+)', wikitext)
+                if len(set(bhl_ids)) == 1:
+                    bhl_page_id = bhl_ids[0]
+                else:
+                    continue
 
         if not bhl_page_id:
             continue
@@ -200,7 +207,8 @@ def generate_metadata(category_name, app_mode=False):
         # Overwrite flickr_id if we have a mapping.
         if bhl_page_id in BHL_TO_FLICKR_DICT.keys():
             flickr_id = BHL_TO_FLICKR_DICT[bhl_page_id]
-
+        else:
+            flickr_id = ""
         page_data = get_bhl_page_data(bhl_page_id)
         if not page_data:
             continue
@@ -263,6 +271,7 @@ def generate_metadata(category_name, app_mode=False):
             "Painter": painter or "",
             "Ref URL for Authors": ref_url_for_authors or "",
             "Item Publication Date": item_publication_date or "",
+            "Item ID": item_id or "",
             "Flickr ID": flickr_id or "",
             "Flickr Tags": flickr_tags or ""
         }
