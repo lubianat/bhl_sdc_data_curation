@@ -54,6 +54,46 @@ TEST = config["TEST"]
 
 CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
 
+ #Impleement get_bhl_title_data with caching
+def get_bhl_title_data(biblio_id):
+    global API_CACHE
+    if biblio_id in API_CACHE:
+        return API_CACHE["biblio_ids"][biblio_id]
+    api_url = "https://www.biodiversitylibrary.org/api3"
+    params = {
+        "op": "GetTitleMetadata",
+        "id": biblio_id,
+        "format": "json",
+        "apikey": BHL_API_KEY
+    }
+    response = requests.get(api_url, params=params)
+    if response.status_code == 200:
+        title_data = response.json().get("Result", {})
+    else:
+        print(f"Failed to fetch BHL title metadata for Title ID {biblio_id}. HTTP Status Code: {response.status_code}")
+        title_data = {}
+    return title_data
+
+def get_bhl_item_data(item_id):
+    global API_CACHE
+    if item_id in API_CACHE:
+        return API_CACHE["item_ids"][item_id]
+    api_url = "https://www.biodiversitylibrary.org/api3"
+    params = {
+        "op": "GetItemMetadata",
+        "id": item_id,
+        "idtype": "bhl",
+        "format": "json",
+        "apikey": BHL_API_KEY
+    }
+    response = requests.get(api_url, params=params)
+    if response.status_code == 200:
+        item_data = response.json().get("Result", {})
+    else:
+        print(f"Failed to fetch BHL item metadata for Item ID {item_id}. HTTP Status Code: {response.status_code}")
+        item_data = {}
+    return item_data
+
 def generate_metadata(category_name, app_mode=False):
     global CATEGORY_NAME
     global CATEGORY_RAW
@@ -108,9 +148,7 @@ def generate_metadata(category_name, app_mode=False):
     CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
 
     files = get_files_in_category(category_name)
-    publication_qid, publication_title, inception_date = find_publication_from_category(category_name)
     rows = []
-    inferred_collection = False
     processed_counter = 0
     processed_creators = False
 
@@ -120,15 +158,15 @@ def generate_metadata(category_name, app_mode=False):
         processed_counter+=1
         wikitext = get_commons_wikitext(file)
         
-        # Initialize variables in case they are not set later.
         bhl_page_id = ""
-        biblio_id = ""
-        instance_of = ""
-        flickr_id = ""
-        names = ""
 
         # Check if the file contains the BHL template.
-        if "{{BHL" not in wikitext:
+        if "{{BHL" in wikitext:
+                    
+            # Parse the BHL template from the wikitext.
+            bhl_page_id = find_page_id_in_bhl_template(wikitext)
+        else:
+
             # If not, but it appears to be an IA source and the flag is set, try to infer.
             if "BHL Consortium" in wikitext and INFER_FROM_INTERNET_ARCHIVE:
                 m = re.search(r'https://archive\.org/stream/([^#]+)#page/n(\d+)', wikitext)
@@ -137,10 +175,8 @@ def generate_metadata(category_name, app_mode=False):
                     inferred_page_id, inferred_item_id, inferred_biblio_id = infer_bhl_page_id_from_ia_url(ia_url, INTERNET_ARCHIVE_OFFSET)
                     if inferred_page_id:
                         bhl_page_id = str(inferred_page_id)
-                        biblio_id = str(inferred_biblio_id)
                     else:
                         bhl_page_id = ""
-                        biblio_id = ""
                 else:
                     continue  # If no IA URL can be extracted, skip this file.
 
@@ -154,42 +190,54 @@ def generate_metadata(category_name, app_mode=False):
                 
                 # Check the reverse of the BHL_TO_FLICKR_DICT to see if we have a mapping.
                 if flickr_id in BHL_TO_FLICKR_DICT.values():
-                    biblio_id = find_publication_from_category(category_name, return_bib_id=True)
-
                     bhl_page_id = next(key for key, value in BHL_TO_FLICKR_DICT.items() if value == flickr_id)
             else:
                 continue
-        else:
-            # Parse the BHL template from the wikitext.
-            bhl_data = parse_bhl_template(wikitext)
-            bhl_page_id = bhl_data.get("pageid", "")
-            instance_of = bhl_data.get("pagetypes", "")
-            biblio_id = bhl_data.get("titleid", "")
-            flickr_id = bhl_data.get("source", "").split("/")[-1] if bhl_data.get("source") else ""
-            names = bhl_data.get("names", "")
 
+        if not bhl_page_id:
+            continue
+        bhl_page_id = str(bhl_page_id)
         # Overwrite flickr_id if we have a mapping.
-        if bhl_page_id in BHL_TO_FLICKR_DICT:
+        if bhl_page_id in BHL_TO_FLICKR_DICT.keys():
             flickr_id = BHL_TO_FLICKR_DICT[bhl_page_id]
 
+        page_data = get_bhl_page_data(bhl_page_id)
+        if not page_data:
+            continue
+            
+        item_id = page_data[0].get("ItemID")
+        
         # Print URL and prompt for additional metadata on the first encounter.
-        if not inferred_collection:
-            bhl_url = f"{BHL_BASE_URL}/bibliography/{biblio_id}"
-            print(f"Visit the BHL page for this category: {bhl_url}")
-            inferred_collection = True
-
-            collection, sponsor = scrape_bhl_details(bhl_url)
-            print(f"Detected Collection: {collection}")
-            print(f"Detected Sponsor: {sponsor}")
+        item_data = get_bhl_item_data(item_id)
+        biblio_id = item_data[0].get("TitleID")
+        biblio_data = get_bhl_title_data(biblio_id)
+        wiki_ids_counter = 0
+        for identifiers in biblio_data[0].get("Identifiers", []):
+            if identifiers.get("IdentifierName") == "Wikidata":
+                publication_qid = identifiers.get("IdentifierValue")
+                wiki_ids_counter += 1
+        if wiki_ids_counter != 1:
+            # Throw exception if there are no Wikidata IDs or more than one. 
+            # This is a critical error that needs to be resolved manually.
+            raise Exception(f"Unexpected number of Wikidata IDs ({wiki_ids_counter}) for BHL Title ID {biblio_id}.")            
+                
+        page_types = "; ".join([a.get("PageTypeName", "") for a in page_data[0].get("PageTypes", [])])
+        names = page_data[0].get("Names", [])
+        pagenumbers = [f"{a['Prefix']} {a['Number']}" for a in page_data[0].get("PageNumbers", [])]
         
+        holding_institution = item_data[0].get("HoldingInstitution", "")
+        sponsor = item_data[0].get("Sponsor", "")
+        item_publication_date = biblio_data[0].get("PublicationDate", "")
+        copyright_status = item_data[0].get("CopyrightStatus")
         
-    
-        if not app_mode:
+        if app_mode:
+            illustrator = ILLUSTRATOR
+            painter = PAINTER
+            engraver = ENGRAVER
+            lithographer = LITHOGRAPHER
+            ref_url_for_authors = REF_URL_FOR_AUTHORS
 
-            if not collection:
-                collection = input("Enter the Collection (if not auto-detected): ").strip()
-            if not sponsor:
-                sponsor = input("Enter the Sponsor (if not auto-detected): ").strip()
+        else:
             if not processed_creators:
                 illustrator = ILLUSTRATOR if ILLUSTRATOR != "" else input("Enter the Illustrator QID: ").strip()
                 painter = PAINTER if PAINTER != "" else input("Enter the Painter QID: ").strip()
@@ -198,24 +246,15 @@ def generate_metadata(category_name, app_mode=False):
                 ref_url_for_authors = REF_URL_FOR_AUTHORS if REF_URL_FOR_AUTHORS != "" else input("Enter the Ref URL for the authors: ").strip()
                 processed_creators = True
 
-        else:
-        # In app mode, simply use the current config values (or set to empty/default)
-    
-            illustrator = ILLUSTRATOR
-            painter = PAINTER
-            engraver = ENGRAVER
-            lithographer = LITHOGRAPHER
-            ref_url_for_authors = REF_URL_FOR_AUTHORS
 
         flickr_tags = get_flickr_tags(flickr_id)
             # Create the metadata row. For files with the BHL template, we include names; otherwise, leave blank.
         row = {
             "File": file or "",
             "BHL Page ID": bhl_page_id or "",
-            "Instance of": instance_of or "",
-            "Published In": publication_title or "",
+            "Page Types": page_types or "",
             "Published In QID": publication_qid or "",
-            "Collection": collection or "",
+            "Collection": holding_institution or "",
             "Sponsor": sponsor or "",
             "Bibliography ID": biblio_id or "",
             "Illustrator": illustrator or "",
@@ -223,8 +262,7 @@ def generate_metadata(category_name, app_mode=False):
             "Lithographer": lithographer or "",
             "Painter": painter or "",
             "Ref URL for Authors": ref_url_for_authors or "",
-            "Inception": inception_date or "",
-            "Names": names if "{{BHL" in wikitext else "",
+            "Item Publication Date": item_publication_date or "",
             "Flickr ID": flickr_id or "",
             "Flickr Tags": flickr_tags or ""
         }
@@ -232,6 +270,23 @@ def generate_metadata(category_name, app_mode=False):
     
     return rows
 
+def get_bhl_page_data(bhl_page_id):
+    api_url = "https://www.biodiversitylibrary.org/api3"
+    params = {
+            "op": "GetPageMetadata",
+            "pageid": bhl_page_id,
+            "ocr": "false",
+            "names": "true",
+            "format": "json",
+            "apikey": BHL_API_KEY
+            }
+    response = requests.get(api_url, params=params)
+    if response.status_code == 200:
+        page_data = response.json().get("Result", {})
+    else:
+        print(f"Failed to fetch BHL page metadata for Page ID {bhl_page_id}. HTTP Status Code: {response.status_code}")
+        page_data = {}
+    return page_data
 def infer_bhl_page_id_from_ia_url(ia_url, offset=0, ):
     """
     Given an Internet Archive URL of a BHL item, extract the IA item identifier and page number,
@@ -378,51 +433,14 @@ def get_commons_wikitext(filename):
     except Exception:
         return ""
 
-def get_taxon_names_from_api(pageid, api_key=BHL_API_KEY):
-    url = "https://www.biodiversitylibrary.org/api2/httpquery.ashx"
-    params = {
-        "op": "GetPageNames",
-        "pageid": pageid,
-        "apikey": api_key,
-        "format": "json"
-    }
-    response = requests.get(url, params=params)
-    if response.status_code != 200:
-        return ""
-    data = response.json()
-    if data.get("Status") != "ok":
-        return ""
-    names_list = [a.get("NameFound", "") for a in data.get("Result", [])]
-    # Remove empty 
-    names = [a for a in names_list if a]
-    # Extract the 'NameFound' field from each record and join with semicolons
-    return "; ".join(names)
 
-def parse_bhl_template(wikitext):
-    # Define the fields we expect from the BHL template
-    fields = ["pageid", "titleid", "pagetypes", "date", "author", "names", "source"]
+def find_page_id_in_bhl_template(wikitext):
     if not wikitext:
-        return {field: "" for field in fields}
-    m = re.search(r'(?s)\{\{BHL\s*\|.*?\}\}', wikitext)
-    if not m:
-        return {field: "" for field in fields}
-    bhl_block = m.group(0)
-    results = {}
-    for field in fields:
-        regex = r"\|\s*{}\s*=\s*(.*?)\n".format(field)
-        fm = re.search(regex, bhl_block)
-        if fm:
-            value = fm.group(1).strip()
-            # Remove any trailing template closing braces and following text
-            value = re.sub(r"\}\}.*", "", value).strip()
-            results[field] = value
-        else:
-            results[field] = ""
-    # If a pageid was found, override the "names" field with taxon names from the API.
-    pageid = results.get("pageid")
-    if pageid:
-        results["names"] = get_taxon_names_from_api(pageid)
-    return results
+        return {"pageid": ""}
+    m = re.search(r'\|\s*pageid\s*=\s*(\d+)', wikitext)
+    if m:
+        return  m.group(1).strip()
+    return ""
 
 def find_publication_from_category(category_name, return_bib_id=False):
     query = f"""

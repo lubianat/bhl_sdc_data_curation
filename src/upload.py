@@ -244,7 +244,7 @@ def add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT):
             new_statements.append(claim_depicts)
 
 def add_inception_claim(row, new_statements):
-    inception_str = row.get("Inception", "").strip()
+    inception_str = row.get("Item Publication Date", "").strip()
     if inception_str:
         if len(inception_str) != 4:
             inception_str = inception_str[:4]

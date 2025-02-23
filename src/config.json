@@ -1,8 +1,8 @@
 {
     "CATEGORY_RAW": "Vergleichende Naturbeschreibung der S\u00e4ugethiere",
-    "TEST": false,
+    "TEST": true,
     "ALL_DRAWINGS": true,
-    "SKIP_CREATOR": true,
+    "SKIP_CREATOR": false,
     "SKIP_DATES": false,
     "ILLUSTRATOR": "",
     "PAINTER": "",
