@@ -118,19 +118,22 @@ LAST|P953|"{vol['bhl_url']}" """.strip())
             """.strip())
     return "\n\n".join(commands)
 
-@app.route("/")
+@app.route("/", methods=["GET"])
 def index():
-    qid = request.args.get("qid").strip()
+    qid = request.args.get("qid", "").strip()
     if not qid:
         return render_template_string(HTML_TEMPLATE)
 
     # Extract the BHL Title ID from the Wikidata QID
     bhl_title_ids = get_statement_values(qid, property="P4327")
 
-    if len(bhl_title_ids) == 1:
-        bhl_title_id = bhl_title_ids[0]
-    else:
-        bhl_title_id = input("Enter the BHL Title ID.")
+    if not bhl_title_ids:
+        return render_template_string(HTML_TEMPLATE, qid=qid, wikidata_url=WIKIDATA_URL + qid, volumes=[], quickstatements="", error="No BHL Title ID found for the given QID.")
+
+    if len(bhl_title_ids) > 1:
+        return render_template_string(HTML_TEMPLATE, qid=qid, wikidata_url=WIKIDATA_URL + qid, volumes=[], quickstatements="", error="Multiple BHL Title IDs found. Please specify one.")
+
+    bhl_title_id = bhl_title_ids[0]
     volumes = get_bhl_volumes(bhl_title_id)
     quickstatements = generate_quickstatements(qid, volumes) if volumes else ""
 
