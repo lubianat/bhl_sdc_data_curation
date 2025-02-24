@@ -54,6 +54,7 @@ def index():
         config["SKIP_DATES"] = request.form.get("SKIP_DATES") == "on"
         config["ADD_EMPTY_IF_SPONSOR_MISSING"] = request.form.get("ADD_EMPTY_IF_SPONSOR_MISSING") == "on"
         config["SKIP_EXISTING_INSTANCE_OF"] = request.form.get("SKIP_EXISTING_INSTANCE_OF") == "on"
+        config["INCLUDE_SUBCATEGORIES"] = request.form.get("INCLUDE_SUBCATEGORIES") == "on"
 
         # Save the updated configuration
         save_config(config)
@@ -104,6 +105,7 @@ def upload():
     config["SKIP_DATES"] = request.form.get("SKIP_DATES") == "on"
     config["ADD_EMPTY_IF_SPONSOR_MISSING"] = request.form.get("ADD_EMPTY_IF_SPONSOR_MISSING") == "on"
     config["SKIP_EXISTING_INSTANCE_OF"] = request.form.get("SKIP_EXISTING_INSTANCE_OF") == "on"
+    config["INCLUDE_SUBCATEGORIES"] = request.form.get("INCLUDE_SUBCATEGORIES") == "on"
 
     # Save the updated configuration
     save_config(config)

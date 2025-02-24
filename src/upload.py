@@ -148,10 +148,12 @@ def main(csv_path):
                 if ALL_DRAWINGS:
                     if not SKIP_CREATOR:
                         add_creator_statements(row, new_statements)
-                    add_depicts_claim(row, new_statements)
                 elif PHOTOGRAPHS_ONLY:
                     # e.g. for photos, skip or handle differently
                     pass
+                elif row.get("Page Types", "") == "Illustration":
+                        add_depicts_claim(row, new_statements)
+
 
 
             if not SKIP_DATES:
@@ -243,14 +245,8 @@ def add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT):
 def add_inception_claim(row, new_statements):
     inception_str = row.get("Item Publication Date", "").strip()
     if inception_str:
-        if len(inception_str) != 4:
-            inception_str = inception_str[:4]
-        
-        # Test if string is a year
-        if not inception_str.isdigit():
+        if len(inception_str) != 4 or not inception_str.isdigit():
             logging.warning(f"Invalid year format for inception date: {inception_str}")
-            global SKIP_DATES
-            SKIP_DATES = True
             return
         
         formatted_string = f"+{inception_str}-01-01T00:00:00Z"
@@ -268,13 +264,10 @@ def add_inception_claim(row, new_statements):
         references = References()
         ref_obj = Reference()
         ref_obj.add(Item(prop_nr="P887", value="Q110393725"))
-        references.add(ref_obj)
         item_id = row.get("Item ID", "").strip()
         if item_id:
-            ref_obj2 = Reference()
-            ref_obj2.add(URL(prop_nr="P854", value=f"https://www.biodiversitylibrary.org/item/{item_id}"))
-            references.add(ref_obj2)
-
+            ref_obj.add(URL(prop_nr="P854", value=f"https://www.biodiversitylibrary.org/item/{item_id}"))
+        references.add(ref_obj)
         claim_inception.references = references
         new_statements.append(claim_inception)
 

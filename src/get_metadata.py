@@ -144,18 +144,15 @@ def generate_metadata(category_name, app_mode=False):
     ADD_EMPTY_IF_SPONSOR_MISSING = config["ADD_EMPTY_IF_SPONSOR_MISSING"]
     SKIP_EXISTING_INSTANCE_OF = config["SKIP_EXISTING_INSTANCE_OF"]
     TEST = config["TEST"]
-
+    INCLUDE_SUBCATEGORIES = config["INCLUDE_SUBCATEGORIES"]
     CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
 
-    files = get_files_in_category(category_name)
+    files = get_files_in_category(category_name, INCLUDE_SUBCATEGORIES)
     rows = []
     processed_counter = 0
     processed_creators = False
 
     for file in tqdm(files):
-        if TEST and processed_counter >= 3:
-            break
-        processed_counter+=1
         wikitext = get_commons_wikitext(file)
         
         bhl_page_id = ""
@@ -235,7 +232,7 @@ def generate_metadata(category_name, app_mode=False):
         
         holding_institution = item_data[0].get("HoldingInstitution", "")
         sponsor = item_data[0].get("Sponsor", "")
-        item_publication_date = biblio_data[0].get("PublicationDate", "")
+        item_publication_date = item_data[0].get("Year", "")
         copyright_status = item_data[0].get("CopyrightStatus")
         
         if app_mode:
@@ -275,8 +272,11 @@ def generate_metadata(category_name, app_mode=False):
             "Flickr ID": flickr_id or "",
             "Flickr Tags": flickr_tags or ""
         }
+        if TEST and processed_counter >= 3:
+            break
+        processed_counter+=1
         rows.append(row)
-    
+
     return rows
 
 def get_bhl_page_data(bhl_page_id):
@@ -405,7 +405,9 @@ def get_flickr_tags(photo_id):
         print("Failed to fetch tags. HTTP Status Code:", response.status_code)
     return tag_raw_content
 
-def get_files_in_category(category_name):
+def get_files_in_category(category_name, include_subcategories=False):
+    files = []
+    # Get files in the current category
     params = {
         "action": "query",
         "list": "categorymembers",
@@ -417,10 +419,34 @@ def get_files_in_category(category_name):
     try:
         r = requests.get(COMMONS_API_ENDPOINT, params=params)
         data = r.json()
-        files = data.get("query", {}).get("categorymembers", [])
-        return [file["title"].replace("File:", "") for file in files]
+        files += [member["title"].replace("File:", "") 
+                  for member in data.get("query", {}).get("categorymembers", [])]
     except Exception:
-        return []
+        pass
+
+    # If requested, get files from subcategories as well
+    if include_subcategories:
+        subcat_params = {
+            "action": "query",
+            "list": "categorymembers",
+            "cmtitle": f"Category:{category_name}",
+            "cmtype": "subcat",
+            "cmlimit": "max",
+            "format": "json"
+        }
+        try:
+            r = requests.get(COMMONS_API_ENDPOINT, params=subcat_params)
+            data = r.json()
+            subcategories = data.get("query", {}).get("categorymembers", [])
+            for subcat in subcategories:
+                # Remove the "Category:" prefix to get the clean category name
+                subcat_name = subcat["title"].replace("Category:", "")
+                # Recursively get files from this subcategory (including its subcategories)
+                files.extend(get_files_in_category(subcat_name, include_subcategories=True))
+        except Exception:
+            pass
+
+    return files
 
 def get_commons_wikitext(filename):
     params = {
