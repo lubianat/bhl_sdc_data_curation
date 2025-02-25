@@ -6,3 +6,4 @@ src/bhl_to_flickr_map/extracted*
 src/bhl_to_flickr_map/zips*
 *pywikibot
 *__pycache__
+*apicache*
