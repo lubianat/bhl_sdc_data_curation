@@ -1,10 +1,10 @@
 {
-    "CATEGORY_RAW": "The Birds of Australia (Broinowski)",
-    "TEST": false,
+    "CATEGORY_RAW": "A_natural_history_of_birds",
+    "TEST": true,
     "ALL_DRAWINGS": false,
     "SKIP_CREATOR": false,
     "SKIP_DATES": false,
-    "ILLUSTRATOR": "Q5591652",
+    "ILLUSTRATOR": "Q20821019",
     "INCLUDE_SUBCATEGORIES": true,
     "GET_FLICKR_TAGS": true,
     "PAINTER": "",

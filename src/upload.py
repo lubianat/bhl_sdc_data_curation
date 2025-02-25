@@ -69,9 +69,9 @@ def generate_custom_edit_summary(test_edit=False):
         skip_creator_snippet = ", skipping creator statements"
         
     if test_edit:
-         return f"SDC import (BHL Model v0.1.2, manual curation - tests{skip_creator_snippet})"
+         return f"SDC import (BHL Model v0.1.3, manual curation - tests{skip_creator_snippet})"
     else:
-        return f"SDC import (BHL Model v0.1.2, manual curation{skip_creator_snippet}) {editgroup_snippet}"
+        return f"SDC import (BHL Model v0.1.3, manual curation{skip_creator_snippet}) {editgroup_snippet}"
     
 
 def main(csv_path):
@@ -118,18 +118,15 @@ def main(csv_path):
             new_statements = []
 
             add_instance_claim(row, new_statements, media)
-
+            add_public_domain_statement(row, new_statements)
             # Published in
             if not SKIP_PUBLISHED_IN:
                 add_published_in_claim(row, new_statements)
-
             add_collection_claim(row, new_statements)
             if row["Sponsor"] =="":
                 if ADD_EMPTY_IF_SPONSOR_MISSING:
                     add_blank_sponsor(row, new_statements)
-                    
             add_digital_sponsor_claim(row, new_statements)
-            
             add_bhl_id_claim(row, new_statements)
             add_flickr_id_claim(row, new_statements)
             if "P31" in media.claims.get_json():
@@ -146,6 +143,8 @@ def main(csv_path):
 
             else:
                 if ALL_DRAWINGS:
+                    add_depicts_claim(row, new_statements)
+
                     if not SKIP_CREATOR:
                         add_creator_statements(row, new_statements)
                 elif PHOTOGRAPHS_ONLY:
@@ -173,13 +172,36 @@ def main(csv_path):
             else:
                 logging.info(f"No SDC data to add for {file_name}, skipping...")
 
+
+def add_public_domain_statement(row, new_statements):
+    if row.get("Copyright Status", "") == "NOT_IN_COPYRIGHT":
+
+        references = References()
+        ref_obj = Reference()
+        ref_obj.add(URL(prop_nr="P854", value=f"https://www.biodiversitylibrary.org/bibliography/{row.get('Bibliography ID', '')}"))
+        references.add(ref_obj)
+        public_domain = Item(prop_nr="P6216", value="Q99263261", references=references) # No Known Copyright Restrictions
+        new_statements.append(public_domain)
+
 def add_creator_statements(row, new_statements):
     add_illustrator_claim(row, new_statements)
     add_engraver_claim(row, new_statements)
     add_lithographer_claim(row, new_statements)
     add_painter_claim(row, new_statements)
 
-def get_qid_from_flickr_binomial_tags(flickr_tags):
+def get_illustrator_qid_from_flickr_illustrator_tags(flickr_tags):
+    qids = []
+    for tag in flickr_tags:
+        # Example tag + " 'taxonomy:binomial=Psittacus cyanogaster'"
+        if "illustrator:wikidata=" in tag:
+            # remove all non-alphanumeric characters
+            qid = tag.split("illustrator:wikidata=")[1].strip().replace("'", "")
+            if qid:
+                qids.append(qid)
+    return qids
+
+
+def get_taxon_qid_from_flickr_binomial_tags(flickr_tags):
     qids = []
     for tag in flickr_tags:
         # Example tag + " 'taxonomy:binomial=Psittacus cyanogaster'"
@@ -230,9 +252,9 @@ def add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT):
     flickr_tags = row.get("Flickr Tags", "").strip().split(",")
     flickr_id = row.get("Flickr ID", "").strip()
     if flickr_tags:
-        qids = get_qid_from_flickr_binomial_tags(flickr_tags)
-        for qid in qids:
-            if len(qids) > 1:
+        taxon_qids = get_taxon_qid_from_flickr_binomial_tags(flickr_tags)
+        for qid in taxon_qids:
+            if len(taxon_qids) > 1:
                 rank = "normal"
             claim_depicts = Item(prop_nr="P180", value=qid, rank=rank)
             references = References()
@@ -242,6 +264,25 @@ def add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT):
             references.add(ref_obj)
             claim_depicts.references = references
             new_statements.append(claim_depicts)
+        illustrator_qids = get_illustrator_qid_from_flickr_illustrator_tags(flickr_tags)
+        for qid in illustrator_qids:
+            qualifiers = Qualifiers()
+            qualifiers.add(Item(prop_nr="P518", value="Q112134971"))  # analog work
+            qualifiers.add(Item(prop_nr="P3831", value="Q644687"))    # illustrator
+
+            references = References()
+            ref_obj = Reference()
+            ref_obj.add(Item(prop_nr="P887", value="Q131782980")) # Inferred from Flickr tag
+            ref_obj.add(URL(prop_nr="P854", value=f"https://www.flickr.com/photo.gne?id={flickr_id}"))
+            references.add(ref_obj)
+
+            claim_creator = Item(
+                prop_nr="P170",
+                value=qid,
+                qualifiers=qualifiers,
+                references=references
+            )
+            new_statements.append(claim_creator)
 
 def add_inception_claim(row, new_statements):
     inception_str = row.get("Item Publication Date", "").strip()
