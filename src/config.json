@@ -1,11 +1,12 @@
 {
-    "CATEGORY_RAW": "Gemeinn\u00fczzige Naturgeschichte des Thierreichs",
+    "CATEGORY_RAW": "The Birds of Australia (Broinowski)",
     "TEST": false,
     "ALL_DRAWINGS": false,
     "SKIP_CREATOR": false,
     "SKIP_DATES": false,
-    "ILLUSTRATOR": "Q1160762",
+    "ILLUSTRATOR": "Q5591652",
     "INCLUDE_SUBCATEGORIES": true,
+    "GET_FLICKR_TAGS": true,
     "PAINTER": "",
     "ENGRAVER": "",
     "LITHOGRAPHER": "",
@@ -13,12 +14,13 @@
     "COMMONS_API_ENDPOINT": "https://commons.wikimedia.org/w/api.php",
     "WIKIDATA_SPARQL_ENDPOINT": "https://query.wikidata.org/sparql",
     "BHL_BASE_URL": "https://www.biodiversitylibrary.org",
-    "INFER_BHL_PAGE_FROM_FLICKR_ID": true,
+    "INFER_BHL_PAGE_FROM_FLICKR_ID": false,
     "INFER_FROM_INTERNET_ARCHIVE": false,
     "INTERNET_ARCHIVE_OFFSET": -1,
     "PHOTOGRAPHS_ONLY": false,
     "SET_PROMINENT": false,
     "SKIP_PUBLISHED_IN": false,
     "ADD_EMPTY_IF_SPONSOR_MISSING": false,
-    "SKIP_EXISTING_INSTANCE_OF": false
+    "SKIP_EXISTING_INSTANCE_OF": false,
+    "RESUME": true
 }

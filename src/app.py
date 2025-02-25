@@ -55,15 +55,15 @@ def index():
         config["ADD_EMPTY_IF_SPONSOR_MISSING"] = request.form.get("ADD_EMPTY_IF_SPONSOR_MISSING") == "on"
         config["SKIP_EXISTING_INSTANCE_OF"] = request.form.get("SKIP_EXISTING_INSTANCE_OF") == "on"
         config["INCLUDE_SUBCATEGORIES"] = request.form.get("INCLUDE_SUBCATEGORIES") == "on"
-
+        config["GET_FLICKR_TAGS"] = request.form.get("GET_FLICKR_TAGS") == "on"
+        config["RESUME"] = request.form.get("RESUME") == "on"
         # Save the updated configuration
         save_config(config)
 
         # Compute CATEGORY_NAME from CATEGORY_RAW
         CATEGORY_NAME = config["CATEGORY_RAW"].replace("_", " ").replace("Category:", "").strip()
-
-        data = get_metadata.generate_metadata(CATEGORY_NAME, app_mode=True)
         output_file = DATA / f"{CATEGORY_NAME.replace(' ', '_')}.tsv"
+        data = get_metadata.generate_metadata(CATEGORY_NAME, app_mode=True, output_file=output_file)
         df = pd.DataFrame(data)
         df.to_csv(output_file, sep="\t", index=False)
         # Pass the metadata to the result template for display.
@@ -106,6 +106,8 @@ def upload():
     config["ADD_EMPTY_IF_SPONSOR_MISSING"] = request.form.get("ADD_EMPTY_IF_SPONSOR_MISSING") == "on"
     config["SKIP_EXISTING_INSTANCE_OF"] = request.form.get("SKIP_EXISTING_INSTANCE_OF") == "on"
     config["INCLUDE_SUBCATEGORIES"] = request.form.get("INCLUDE_SUBCATEGORIES") == "on"
+    config["GET_FLICKR_TAGS"] = request.form.get("GET_FLICKR_TAGS") == "on"
+    config["RESUME"] = request.form.get("RESUME") == "on"
 
     # Save the updated configuration
     save_config(config)

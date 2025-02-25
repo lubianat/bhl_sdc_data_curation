@@ -152,6 +152,7 @@ def main(csv_path):
                     # e.g. for photos, skip or handle differently
                     pass
                 elif row.get("Page Types", "") == "Illustration":
+                        add_creator_statements(row, new_statements)
                         add_depicts_claim(row, new_statements)
 
 

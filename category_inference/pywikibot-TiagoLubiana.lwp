@@ -1,0 +1,13 @@
+#LWP-Cookies-2.0
+Set-Cookie3: WMF-Last-Access="17-Feb-2025"; path="/"; domain="commons.wikimedia.org"; path_spec; secure; expires="2025-03-21 12:00:00Z"; HttpOnly=None; version=0
+Set-Cookie3: NetworkProbeLimit="0.001"; path="/"; domain="commons.wikimedia.org"; path_spec; secure; expires="2025-02-17 19:44:38Z"; SameSite=Lax; version=0
+Set-Cookie3: commonswikiSession=qsq41oq7crh1b1ulat0c6uua4u82svj9; path="/"; domain="commons.wikimedia.org"; path_spec; secure; discard; HttpOnly=None; SameSite=None; version=0
+Set-Cookie3: commonswikiUserID=3899251; path="/"; domain="commons.wikimedia.org"; path_spec; secure; expires="2026-02-17 18:44:45Z"; HttpOnly=None; SameSite=None; version=0
+Set-Cookie3: commonswikiUserName=TiagoLubiana; path="/"; domain="commons.wikimedia.org"; path_spec; secure; expires="2026-02-17 18:44:45Z"; HttpOnly=None; SameSite=None; version=0
+Set-Cookie3: centralauth_User=TiagoLubiana; path="/"; domain="commons.wikimedia.org"; path_spec; secure; expires="2026-02-17 18:44:45Z"; HttpOnly=None; SameSite=None; version=0
+Set-Cookie3: centralauth_Token=ddf84d7f48b5e51c87547184a84fca2d; path="/"; domain="commons.wikimedia.org"; path_spec; secure; expires="2026-02-17 18:44:45Z"; HttpOnly=None; SameSite=None; version=0
+Set-Cookie3: centralauth_Session=74d0f66c54f377e85a9fd64e73dc1730; path="/"; domain="commons.wikimedia.org"; path_spec; secure; discard; HttpOnly=None; SameSite=None; version=0
+Set-Cookie3: loginnotify_prevlogins="2025-affecw-l6u6ew1osannbssqiw8hbj94xtvjko4"; path="/"; domain="commons.wikimedia.org"; path_spec; secure; expires="2025-08-16 18:44:45Z"; HttpOnly=None; version=0
+Set-Cookie3: cpPosIndex="2%401739817885%232fadca84890da80c5e9e0bbf55ff70de"; path="/"; domain="commons.wikimedia.org"; path_spec; secure; expires="2025-02-17 18:44:55Z"; HttpOnly=None; version=0
+Set-Cookie3: UseDC=master; path="/"; domain="commons.wikimedia.org"; path_spec; secure; expires="2025-02-17 18:44:55Z"; HttpOnly=None; version=0
+Set-Cookie3: GeoIP="BR:SP:S__o_Paulo:-23.63:-46.64:v4"; path="/"; domain=".wikimedia.org"; path_spec; domain_dot; secure; discard; version=0

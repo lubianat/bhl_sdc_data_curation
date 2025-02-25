@@ -112,7 +112,7 @@ def generate_title_quickstatements(title_data):
             commands.append(f'LAST|P50|{author_qid}|S854|"https://www.biodiversitylibrary.org/bibliography/{bhl_title_id}"|S1932|"{author_name}"\n')
         else:
             print(f"QID NOT FOUND FOR author: {author}")
-            commands.append(f'LAST|P2093|"{author_name}"|S854|"https://www.biodiversitylibrary.org/bibliography/{bhl_title_id}"')
+            commands.append(f'LAST|P2093|"{author_name}"|S854|"https://www.biodiversitylibrary.org/bibliography/{bhl_title_id}"\n')
     
     return "\n\n".join(commands)
 
