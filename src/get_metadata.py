@@ -170,7 +170,9 @@ def generate_metadata(category_name, app_mode=False, output_file=None):
                 
         page_types = "; ".join([a.get("PageTypeName", "") for a in page_data[0].get("PageTypes", [])])
         names = "; ".join(list(set(name.get("NameCanonical","") for name in page_data[0].get("Names", []))))
-        pagenumbers = [f"{a['Prefix']} {a['Number']}" for a in page_data[0].get("PageNumbers", [])]
+        pagenumber_string = [f"{a['Prefix']} {a['Number']}" for a in page_data[0].get("PageNumbers", [])]
+        page_number_prefix = page_data[0].get("PageNumbers", [{}])[0].get("Prefix", "") 
+        page_number_number = page_data[0].get("PageNumbers", [{}])[0].get("Number", "") 
         volume = page_data[0].get("Volume", "")
         holding_institution = item_data[0].get("HoldingInstitution", "")
         sponsor = item_data[0].get("Sponsor", "")
@@ -202,7 +204,9 @@ def generate_metadata(category_name, app_mode=False, output_file=None):
             "File": file or "",
             "BHL Page ID": bhl_page_id or "",
             "Page Types": page_types or "",
-            "Page Numbers": pagenumbers or "",
+            "Page Number String": pagenumber_string or "",
+            "Page Number Prefix": page_number_prefix or "",
+            "Page Number Number": page_number_number or "",
             "Published In QID": publication_qid or "",
             "Collection": holding_institution or "",
             "Sponsor": sponsor or "",

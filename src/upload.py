@@ -27,7 +27,7 @@ DICTS = HERE / "dicts"
 def load_config():
     with open(HERE / "config.json", "r") as config_file:
         return json.load(config_file)
-
+LIST_OF_PLATE_PREFIXES = ["Pl."]
 # Set configuration as global variables
 config = load_config()
 CATEGORY_RAW = config["CATEGORY_RAW"]
@@ -71,9 +71,9 @@ def generate_custom_edit_summary(test_edit=False):
         skip_creator_snippet = ", without manual creator curation"
         
     if test_edit:
-         return f"SDC import (BHL Model v0.1.3 - tests{skip_creator_snippet})"
+         return f"SDC import (BHL Model v0.1.4 - tests{skip_creator_snippet})"
     else:
-        return f"SDC import (BHL Model v0.1.3{skip_creator_snippet}) {editgroup_snippet}"
+        return f"SDC import (BHL Model v0.1.4{skip_creator_snippet}) {editgroup_snippet}"
     
 
 def main(csv_path):
@@ -566,7 +566,14 @@ def add_published_in_claim(row, new_statements):
         qualifiers.add(Item(prop_nr="P518", value="Q112134971"))  # analog work
         volume  = row.get("Volume", "").strip()
         if volume:
-            qualifiers.add(String(prop_nr="P478", value="Q112134971"))  # analog work
+            qualifiers.add(String(prop_nr="P478", value=volume))
+
+        page_number_prefix = row.get("Page Number Prefix", "").strip()
+        page_number_number = row.get("Page Number Number", "").strip()
+        if page_number_prefix and page_number_number:
+            if page_number_prefix in LIST_OF_PLATE_PREFIXES:
+                qualifiers.add(String(prop_nr="P12275", value=page_number_number))
+
         references = References()
         bhl_page_id = row.get("BHL Page ID", "").strip()
         if bhl_page_id:
