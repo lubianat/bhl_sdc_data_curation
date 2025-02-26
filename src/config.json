@@ -1,10 +1,10 @@
 {
-    "CATEGORY_RAW": "A_natural_history_of_birds",
-    "TEST": true,
+    "CATEGORY_RAW": "Flore m\u00e9dicale des Antilles",
+    "TEST": false,
     "ALL_DRAWINGS": false,
     "SKIP_CREATOR": false,
     "SKIP_DATES": false,
-    "ILLUSTRATOR": "Q20821019",
+    "ILLUSTRATOR": "Q104043586",
     "INCLUDE_SUBCATEGORIES": true,
     "GET_FLICKR_TAGS": true,
     "PAINTER": "",

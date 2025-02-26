@@ -143,7 +143,7 @@ def generate_metadata(category_name, app_mode=False, output_file=None):
         else:
             flickr_id = ""
         page_data = get_bhl_page_data(bhl_page_id)
-        if not page_data:
+        if not page_data or not page_data[0]:
             continue
             
         item_id = page_data[0].get("ItemID")
@@ -171,6 +171,7 @@ def generate_metadata(category_name, app_mode=False, output_file=None):
         page_types = "; ".join([a.get("PageTypeName", "") for a in page_data[0].get("PageTypes", [])])
         names = "; ".join(list(set(name.get("NameCanonical","") for name in page_data[0].get("Names", []))))
         pagenumbers = [f"{a['Prefix']} {a['Number']}" for a in page_data[0].get("PageNumbers", [])]
+        volume = page_data[0].get("Volume", "")
         holding_institution = item_data[0].get("HoldingInstitution", "")
         sponsor = item_data[0].get("Sponsor", "")
         item_publication_date = item_data[0].get("Year", "")
@@ -217,6 +218,7 @@ def generate_metadata(category_name, app_mode=False, output_file=None):
             "Flickr ID": flickr_id or "",
             "Flickr Tags": flickr_tags or "",
             "Copyright Status": copyright_status or "",
+            "Volume": volume or ""
         }
         if TEST and processed_counter >= 3:
             break
@@ -366,6 +368,7 @@ def get_bhl_page_data(bhl_page_id):
             "apikey": BHL_API_KEY
             }
     response = requests.get(api_url, params=params)
+    print(response.url)
     if response.status_code == 200:
         page_data = response.json().get("Result", {})
     else:
@@ -429,8 +432,8 @@ def get_page_from_flickr_id_via_wikitext(wikitext):
     return bhl_page_id
 
 def search_for_bhl_urls(wikitext):
-    bhl_ids = re.findall(r'https://www\.biodiversitylibrary\.org/page/(\d+)', wikitext)
-    bhl_ids += re.findall(r'https://www\.biodiversitylibrary\.org/pageimage/(\d+)', wikitext)
+    bhl_ids = re.findall(r'biodiversitylibrary\.org/page/(\d+)', wikitext)
+    bhl_ids += re.findall(r'biodiversitylibrary\.org/pageimage/(\d+)', wikitext)
     if len(set(bhl_ids)) == 1:
         bhl_page_id = bhl_ids[0]
     else:

@@ -7,7 +7,8 @@ from wikibaseintegrator.datatypes import (
     Item,
     ExternalID,
     Time,
-    URL
+    URL,
+    String
 )
 from login import *
 from helper import get_media_info_id
@@ -16,6 +17,7 @@ from pathlib import Path
 from wdcuration import query_wikidata, add_key_and_save_to_independent_dict
 import json 
 import random
+from wdcuration import lookup_id
 
 HERE = Path(__file__).parent
 DATA = HERE / "data"
@@ -66,12 +68,12 @@ def generate_custom_edit_summary(test_edit=False):
     editgroup_snippet = f"([[:toolforge:editgroups-commons/b/CB/{random_hex}|details]])"
     skip_creator_snippet = ""
     if SKIP_CREATOR: 
-        skip_creator_snippet = ", skipping creator statements"
+        skip_creator_snippet = ", without manual creator curation"
         
     if test_edit:
-         return f"SDC import (BHL Model v0.1.3, manual curation - tests{skip_creator_snippet})"
+         return f"SDC import (BHL Model v0.1.3 - tests{skip_creator_snippet})"
     else:
-        return f"SDC import (BHL Model v0.1.3, manual curation{skip_creator_snippet}) {editgroup_snippet}"
+        return f"SDC import (BHL Model v0.1.3{skip_creator_snippet}) {editgroup_snippet}"
     
 
 def main(csv_path):
@@ -95,7 +97,13 @@ def main(csv_path):
 
             file_name = row.get("File", "").strip()
             file_name_lower = file_name.lower()
-
+            flickr_tags = row.get("Flickr Tags", "").strip().split(",")
+            # continue_flag = True
+            # for tag in flickr_tags:
+            #     if "artist:viaf" in tag:
+            #         continue_flag = False
+            # if continue_flag:
+            #     continue
             if file_name_lower.endswith(".pdf") or file_name_lower.endswith(".djvu"):
                 logging.warning(f"Skipping row with PDF/DJVU file: {file_name}")
                 continue
@@ -174,21 +182,79 @@ def main(csv_path):
 
 
 def add_public_domain_statement(row, new_statements):
-    if row.get("Copyright Status", "") == "NOT_IN_COPYRIGHT":
-
+    copyright_status = row.get("Copyright Status", "")
+    if copyright_status == "NOT_IN_COPYRIGHT" or "Public domain. The BHL considers that this work is no longer under copyright protection.":
         references = References()
         ref_obj = Reference()
         ref_obj.add(URL(prop_nr="P854", value=f"https://www.biodiversitylibrary.org/bibliography/{row.get('Bibliography ID', '')}"))
         references.add(ref_obj)
-        public_domain = Item(prop_nr="P6216", value="Q99263261", references=references) # No Known Copyright Restrictions
-        new_statements.append(public_domain)
+        copyright_status_claim = Item(prop_nr="P6216", value="Q99263261", references=references) # No Known Copyright Restrictions
+        new_statements.append(copyright_status_claim)
 
 def add_creator_statements(row, new_statements):
     add_illustrator_claim(row, new_statements)
     add_engraver_claim(row, new_statements)
     add_lithographer_claim(row, new_statements)
     add_painter_claim(row, new_statements)
+    flickr_tags = row.get("Flickr Tags", "").strip().split(",")
+    flickr_id = row.get("Flickr ID", "").strip()
+    illustrator_qids = get_illustrator_qid_from_flickr_illustrator_tags(flickr_tags)
+    for qid in illustrator_qids:
+        qualifiers = Qualifiers()
+        qualifiers.add(Item(prop_nr="P518", value="Q112134971"))  # analog work
+        qualifiers.add(Item(prop_nr="P3831", value="Q644687"))    # illustrator
 
+        references = References()
+        ref_obj = Reference()
+        ref_obj.add(Item(prop_nr="P887", value="Q131782980")) # Inferred from Flickr tag
+        ref_obj.add(URL(prop_nr="P854", value=f"https://www.flickr.com/photo.gne?id={flickr_id}"))
+        references.add(ref_obj)
+
+        claim_creator = Item(
+            prop_nr="P170",
+            value=qid,
+            qualifiers=qualifiers,
+            references=references
+        )
+        new_statements.append(claim_creator)
+    artist_qids = get_artist_qids_from_flickr_tags(flickr_tags)
+    for qid in artist_qids:
+        if qid in illustrator_qids:
+            continue
+        qualifiers = Qualifiers()
+        qualifiers.add(Item(prop_nr="P518", value="Q112134971"))  # analog work
+        qualifiers.add(Item(prop_nr="P3831", value="Q483501"))    # artist
+
+        references = References()
+        ref_obj = Reference()
+        ref_obj.add(Item(prop_nr="P887", value="Q131782980")) # Inferred from Flickr tag
+        ref_obj.add(URL(prop_nr="P854", value=f"https://www.flickr.com/photo.gne?id={flickr_id}"))
+        references.add(ref_obj)
+
+        claim_creator_artist = Item(
+            prop_nr="P170",
+            value=qid,
+            qualifiers=qualifiers,
+            references=references
+        )
+        new_statements.append(claim_creator_artist)
+
+def get_artist_qids_from_flickr_tags(flickr_tags):
+    qids = []
+    for tag in flickr_tags:
+        # Example tag + " 'taxonomy:binomial=Psittacus cyanogaster'"
+        if "artist:wikidata=" in tag:
+            # remove all non-alphanumeric characters
+            qid = tag.split("artist:wikidata=")[1].strip().replace("'", "")
+            if qid:
+                qids.append(qid)
+        elif "artist:viaf" in tag:
+            # remove all non-alphanumeric characters
+            viaf = tag.split("artist:viaf=")[1].strip().replace("'", "")
+            qid = lookup_id(viaf, "P214")
+            if qid:
+                qids.append(qid)
+    return qids
 def get_illustrator_qid_from_flickr_illustrator_tags(flickr_tags):
     qids = []
     for tag in flickr_tags:
@@ -264,25 +330,7 @@ def add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT):
             references.add(ref_obj)
             claim_depicts.references = references
             new_statements.append(claim_depicts)
-        illustrator_qids = get_illustrator_qid_from_flickr_illustrator_tags(flickr_tags)
-        for qid in illustrator_qids:
-            qualifiers = Qualifiers()
-            qualifiers.add(Item(prop_nr="P518", value="Q112134971"))  # analog work
-            qualifiers.add(Item(prop_nr="P3831", value="Q644687"))    # illustrator
-
-            references = References()
-            ref_obj = Reference()
-            ref_obj.add(Item(prop_nr="P887", value="Q131782980")) # Inferred from Flickr tag
-            ref_obj.add(URL(prop_nr="P854", value=f"https://www.flickr.com/photo.gne?id={flickr_id}"))
-            references.add(ref_obj)
-
-            claim_creator = Item(
-                prop_nr="P170",
-                value=qid,
-                qualifiers=qualifiers,
-                references=references
-            )
-            new_statements.append(claim_creator)
+ 
 
 def add_inception_claim(row, new_statements):
     inception_str = row.get("Item Publication Date", "").strip()
@@ -516,11 +564,14 @@ def add_published_in_claim(row, new_statements):
     if published_in:
         qualifiers = Qualifiers()
         qualifiers.add(Item(prop_nr="P518", value="Q112134971"))  # analog work
+        volume  = row.get("Volume", "").strip()
+        if volume:
+            qualifiers.add(String(prop_nr="P478", value="Q112134971"))  # analog work
         references = References()
-        bib_id = row.get("Bibliography ID", "").strip()
-        if bib_id:
+        bhl_page_id = row.get("BHL Page ID", "").strip()
+        if bhl_page_id:
             ref_obj = Reference()
-            ref_obj.add(URL(prop_nr="P854", value=f"https://www.biodiversitylibrary.org/bibliography/{bib_id}"))
+            ref_obj.add(URL(prop_nr="P854", value=f"https://www.biodiversitylibrary.org/page/{bhl_page_id}"))
             references.add(ref_obj)
         claim_published_in = Item(
             prop_nr="P1433",
