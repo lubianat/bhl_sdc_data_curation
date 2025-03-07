@@ -18,40 +18,44 @@ from wdcuration import query_wikidata, add_key_and_save_to_independent_dict
 import json 
 import random
 from wdcuration import lookup_id
+import argparse
+import requests
+from wdcuration import lookup_id
 
+def get_wikidata_qid_from_gbif(name):
+    # GBIF species match endpoint
+    url = "http://api.gbif.org/v1/species/match"
+    params = {"name": name}
+    
+    response = requests.get(url, params=params)
+    if response.status_code != 200:
+        print("Error: Unable to reach GBIF API")
+        return
+    
+    data = response.json()
+    gbif_id = data.get("speciesKey")
+    qid = lookup_id(gbif_id, property="P846")   
+    
+    # If GBIF identifies the name as a synonym, it returns "synonym": true
+    if data.get("synonym", False):
+        current_species_name = data.get("species")
+        if current_species_name:
+            print(f"'{name}' is a synonym. The current accepted name is: {current_species_name}")
+        return qid
+    if not qid:
+        print(f"Error: Unable to find Wikidata QID for '{name}'")
+        return ""
+    return qid
+    
 HERE = Path(__file__).parent
 DATA = HERE / "data"
 DICTS = HERE / "dicts"
 
 # Load configuration from config.json
-def load_config():
-    with open(HERE / "config.json", "r") as config_file:
+def load_config(config_file_name):
+    with open(HERE / config_file_name, "r") as config_file:
         return json.load(config_file)
 LIST_OF_PLATE_PREFIXES = ["Pl."]
-# Set configuration as global variables
-config = load_config()
-CATEGORY_RAW = config["CATEGORY_RAW"]
-TEST = config["TEST"]
-ALL_DRAWINGS = config["ALL_DRAWINGS"]
-SKIP_CREATOR = config["SKIP_CREATOR"]
-INFER_BHL_PAGE_FROM_FLICKR_ID = config["INFER_BHL_PAGE_FROM_FLICKR_ID"]
-INFER_FROM_INTERNET_ARCHIVE = config["INFER_FROM_INTERNET_ARCHIVE"]
-INTERNET_ARCHIVE_OFFSET = config["INTERNET_ARCHIVE_OFFSET"]
-PHOTOGRAPHS_ONLY = config["PHOTOGRAPHS_ONLY"]
-ILLUSTRATOR = config["ILLUSTRATOR"]
-PAINTER = config["PAINTER"]
-ENGRAVER = config["ENGRAVER"]
-LITHOGRAPHER = config["LITHOGRAPHER"]
-REF_URL_FOR_AUTHORS = config["REF_URL_FOR_AUTHORS"]
-COMMONS_API_ENDPOINT = config["COMMONS_API_ENDPOINT"]
-WIKIDATA_SPARQL_ENDPOINT = config["WIKIDATA_SPARQL_ENDPOINT"]
-BHL_BASE_URL = config["BHL_BASE_URL"]
-SET_PROMINENT = config["SET_PROMINENT"]
-SKIP_PUBLISHED_IN = config["SKIP_PUBLISHED_IN"]
-SKIP_DATES = config["SKIP_DATES"]
-ADD_EMPTY_IF_SPONSOR_MISSING = config["ADD_EMPTY_IF_SPONSOR_MISSING"]
-SKIP_EXISTING_INSTANCE_OF = config["SKIP_EXISTING_INSTANCE_OF"]
-CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
 
 INSTITUTIONS_DICT = json.loads(DICTS.joinpath("institutions.json").read_text())
 
@@ -76,7 +80,7 @@ def generate_custom_edit_summary(test_edit=False):
         return f"SDC import (BHL Model v0.1.4{skip_creator_snippet}) {editgroup_snippet}"
     
 
-def main(csv_path):
+def upload_metadata_to_commons(csv_path, config, auto_mode=False):
 
     logging.basicConfig(level=logging.INFO)
 
@@ -97,13 +101,7 @@ def main(csv_path):
 
             file_name = row.get("File", "").strip()
             file_name_lower = file_name.lower()
-            flickr_tags = row.get("Flickr Tags", "").strip().split(",")
-            # continue_flag = True
-            # for tag in flickr_tags:
-            #     if "artist:viaf" in tag:
-            #         continue_flag = False
-            # if continue_flag:
-            #     continue
+            
             if file_name_lower.endswith(".pdf") or file_name_lower.endswith(".djvu"):
                 logging.warning(f"Skipping row with PDF/DJVU file: {file_name}")
                 continue
@@ -129,7 +127,7 @@ def main(csv_path):
             add_public_domain_statement(row, new_statements)
             # Published in
             if not SKIP_PUBLISHED_IN:
-                add_published_in_claim(row, new_statements)
+                add_published_in_claim(row, new_statements,media)
             add_collection_claim(row, new_statements)
             if row["Sponsor"] =="":
                 if ADD_EMPTY_IF_SPONSOR_MISSING:
@@ -143,7 +141,7 @@ def main(csv_path):
                     # Either "Illustrated text" or "Illustration"
                     if not SKIP_CREATOR:
                         add_creator_statements(row, new_statements)
-                    add_depicts_claim(row, new_statements)
+                    add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT)
 
                 elif PHOTOGRAPHS_ONLY:
                     # e.g. for photos, skip or handle differently
@@ -151,7 +149,7 @@ def main(csv_path):
 
             else:
                 if ALL_DRAWINGS:
-                    add_depicts_claim(row, new_statements)
+                    add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT)
 
                     if not SKIP_CREATOR:
                         add_creator_statements(row, new_statements)
@@ -160,7 +158,7 @@ def main(csv_path):
                     pass
                 elif row.get("Page Types", "") == "Illustration":
                         add_creator_statements(row, new_statements)
-                        add_depicts_claim(row, new_statements)
+                        add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT)
 
 
 
@@ -267,31 +265,23 @@ def get_illustrator_qid_from_flickr_illustrator_tags(flickr_tags):
     return qids
 
 
-def get_taxon_qid_from_flickr_binomial_tags(flickr_tags):
-    qids = []
+def get_species_names_from_flickr_binomial_tags(flickr_tags):
+    names = []
     for tag in flickr_tags:
         # Example tag + " 'taxonomy:binomial=Psittacus cyanogaster'"
         if "taxonomy:binomial=" in tag:
             # remove all non-alphanumeric characters
             taxon_name = tag.split("taxonomy:binomial=")[1].strip().replace("'", "")
             taxon_name = ''.join(e for e in taxon_name if e.isalnum() or e == " ")
-            qid = get_qid_from_taxon_name(taxon_name)
-            if qid:
-                qids.append(qid)
-    return qids
+            # Skip if it is only a genus
+            if len(taxon_name.split(" ")) == 1:
+                continue
+            if taxon_name:
+                names.append(taxon_name)
+    return names
 
-def get_qid_from_taxon_name(taxon_name):
-    query = f"""
-    SELECT ?item WHERE {{
-        ?item wdt:P225 "{taxon_name}".
-    }}
-    """
-    result = query_wikidata(query)
-    if len(result) == 1:
-        return result[0]["item"].replace("http://www.wikidata.org/entity/", "")
-    return ""
 
-def add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT):
+def add_depicts_claim(row, new_statements, set_prominent=True):
     names = row.get("Names", "").strip().split("; ")
     if set_prominent:
         rank = "preferred"
@@ -301,15 +291,19 @@ def add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT):
         bhl_page_id = row.get("BHL Page ID", "").strip()
         if bhl_page_id:
            for name in names:
+            if name == "":
+                continue
+
+            references = References()
+            ref_obj = Reference()
+            ref_obj.add(Item(prop_nr="P887", value="Q132907038")) #INFERRED FROM GBIF SCIENTIFIC NAME MATCHING SERVICES 
+            ref_obj.add(String(prop_nr="P5997", value=name)) # Object stated in reference as 
             if len(name.split(" ")) == 1:
                 # If only one word, it's probably a genus, skip
                 continue
-            qid = get_qid_from_taxon_name(name)
+            qid = get_wikidata_qid_from_gbif(name)
             if qid:
-
                 claim_depicts = Item(prop_nr="P180", value=qid, rank=rank)
-                references = References()
-                ref_obj = Reference()
                 ref_obj.add(Item(prop_nr="P887", value="Q132359710")) # Inferred from the BHL OCR
                 ref_obj.add(URL(prop_nr="P854", value=f"https://biodiversitylibrary.org/page/{bhl_page_id}"))
                 references.add(ref_obj)
@@ -318,18 +312,22 @@ def add_depicts_claim(row, new_statements, set_prominent=SET_PROMINENT):
     flickr_tags = row.get("Flickr Tags", "").strip().split(",")
     flickr_id = row.get("Flickr ID", "").strip()
     if flickr_tags:
-        taxon_qids = get_taxon_qid_from_flickr_binomial_tags(flickr_tags)
-        for qid in taxon_qids:
-            if len(taxon_qids) > 1:
+        flickr_species_names = get_species_names_from_flickr_binomial_tags(flickr_tags)
+        for name in flickr_species_names:
+            if len(names) > 1:
                 rank = "normal"
-            claim_depicts = Item(prop_nr="P180", value=qid, rank=rank)
-            references = References()
-            ref_obj = Reference()
-            ref_obj.add(Item(prop_nr="P887", value="Q131782980")) # Inferred from Flickr tag
-            ref_obj.add(URL(prop_nr="P854", value=f"https://www.flickr.com/photo.gne?id={flickr_id}"))
-            references.add(ref_obj)
-            claim_depicts.references = references
-            new_statements.append(claim_depicts)
+            qid = get_wikidata_qid_from_gbif(name)
+            if qid:
+                references = References()
+                ref_obj = Reference()
+                ref_obj.add(Item(prop_nr="P887", value="Q132907038")) #INFERRED FROM GBIF SCIENTIFIC NAME MATCHING SERVICES 
+                ref_obj.add(String(prop_nr="P5997", value=name)) 
+                claim_depicts = Item(prop_nr="P180", value=qid, rank=rank)
+                ref_obj.add(Item(prop_nr="P887", value="Q131782980")) # Inferred from Flickr tag
+                ref_obj.add(URL(prop_nr="P854", value=f"https://www.flickr.com/photo.gne?id={flickr_id}"))
+                references.add(ref_obj)
+                claim_depicts.references = references
+                new_statements.append(claim_depicts)
  
 
 def add_inception_claim(row, new_statements):
@@ -558,9 +556,27 @@ def add_instance_claim(row, new_statements, media):
         claim_instance_of = Item(prop_nr="P31", value="Q1456936")
         new_statements.append(claim_instance_of)
         return 1
+    if row.get("Page Types") == "Foldout":
+        claim_instance_of = Item(prop_nr="P31", value="Q2649400")
+        new_statements.append(claim_instance_of)
+        return 1
+    if row.get("Page Types") == "Map":
+        claim_instance_of = Item(prop_nr="P31", value="Q4006")
+        new_statements.append(claim_instance_of)
+        return 1
 
-def add_published_in_claim(row, new_statements):
+def add_published_in_claim(row, new_statements, media):
+    # Test 
     published_in = row.get("Published In QID", "").strip()
+    claims = media.claims.get_json()
+    if "P1433" in claims:
+        for publication_entry in claims["P1433"]:
+            try:
+
+                if publication_entry["mainsnak"]["datavalue"]["value"]["id"] == published_in:
+                    return 1
+            except:
+                continue    
     if published_in:
         qualifiers = Qualifiers()
         qualifiers.add(Item(prop_nr="P518", value="Q112134971"))  # analog work
@@ -591,4 +607,49 @@ def add_published_in_claim(row, new_statements):
         
 
 if __name__ == "__main__":
-    main(DATA / f"{CATEGORY_NAME.replace(' ', '_')}.tsv")
+
+    parser = argparse.ArgumentParser(description="Generate metadata for BHL images.")
+    parser.add_argument("--auto_mode", action="store_true", help="Use auto mode configuration.")
+    parser.add_argument("--category_raw", type=str, help="Specify the raw category name.")
+    args = parser.parse_args()
+
+    if args.auto_mode:
+        config_file = "config_auto.json"
+        test = input("proceed? ONLY PROCEED IF THERE ARE NO PHOTOGRAPHS IN THIS CATEGORY")
+    else:
+        config_file =  "config.json"
+
+    config = load_config(config_file)
+
+    TEST = config["TEST"]
+    ALL_DRAWINGS = config["ALL_DRAWINGS"]
+    SKIP_CREATOR = config["SKIP_CREATOR"]
+    INFER_BHL_PAGE_FROM_FLICKR_ID = config["INFER_BHL_PAGE_FROM_FLICKR_ID"]
+    INFER_FROM_INTERNET_ARCHIVE = config["INFER_FROM_INTERNET_ARCHIVE"]
+    INTERNET_ARCHIVE_OFFSET = config["INTERNET_ARCHIVE_OFFSET"]
+    PHOTOGRAPHS_ONLY = config["PHOTOGRAPHS_ONLY"]
+    ILLUSTRATOR = config["ILLUSTRATOR"]
+    PAINTER = config["PAINTER"]
+    ENGRAVER = config["ENGRAVER"]
+    LITHOGRAPHER = config["LITHOGRAPHER"]
+    REF_URL_FOR_AUTHORS = config["REF_URL_FOR_AUTHORS"]
+    COMMONS_API_ENDPOINT = config["COMMONS_API_ENDPOINT"]
+    WIKIDATA_SPARQL_ENDPOINT = config["WIKIDATA_SPARQL_ENDPOINT"]
+    BHL_BASE_URL = config["BHL_BASE_URL"]
+    SET_PROMINENT = config["SET_PROMINENT"]
+    SKIP_PUBLISHED_IN = config["SKIP_PUBLISHED_IN"]
+    SKIP_DATES = config["SKIP_DATES"]
+    ADD_EMPTY_IF_SPONSOR_MISSING = config["ADD_EMPTY_IF_SPONSOR_MISSING"]
+    SKIP_EXISTING_INSTANCE_OF = config["SKIP_EXISTING_INSTANCE_OF"]
+
+    if args.category_raw:
+        CATEGORY_RAW = args.category_raw
+        config["CATEGORY_RAW"] = CATEGORY_RAW
+    else:
+        CATEGORY_RAW = config["CATEGORY_RAW"]
+
+    CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
+
+    output_file = DATA / f"{CATEGORY_NAME.replace(' ', '_')}.tsv"
+
+    upload_metadata_to_commons(output_file, config=config, auto_mode=args.auto_mode)

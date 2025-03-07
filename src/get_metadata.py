@@ -6,6 +6,7 @@ import pandas as pd
 from tqdm import tqdm
 from login import *
 from helper import *
+import argparse
 
 
 # Directories for data and dictionaries
@@ -16,13 +17,13 @@ API_CACHE = {}
 
 # Load the dictionary mapping BHL page IDs to Flickr IDs
 BHL_TO_FLICKR_DICT = json.loads(DICTS.joinpath("bhl_flickr_dict.json").read_text())
-def load_config():
-    with open(HERE / "config.json", "r") as config_file:
+def load_config(config_file_name):
+    with open(HERE / config_file_name, "r") as config_file:
         return json.load(config_file)
 
 RESUME = True
 
-config = load_config()
+config = load_config("config.json")
 CATEGORY_RAW = config["CATEGORY_RAW"]
 TEST = config["TEST"]
 ALL_DRAWINGS = config["ALL_DRAWINGS"]
@@ -48,9 +49,8 @@ TEST = config["TEST"]
 
 CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
 
-def generate_metadata(category_name, app_mode=False, output_file=None):
+def generate_metadata(category_name, app_mode=False, output_file=None, config=None, auto_mode=False):
     global CATEGORY_NAME
-    global CATEGORY_RAW
     global TEST
     global ALL_DRAWINGS
     global SKIP_CREATOR
@@ -75,9 +75,6 @@ def generate_metadata(category_name, app_mode=False, output_file=None):
     global INCLUDE_SUBCATEGORIES
     global GET_FLICKR_TAGS
         
-    # Load configuration from config.json
-    config = load_config()
-    CATEGORY_RAW = config["CATEGORY_RAW"]
     TEST = config["TEST"]
     ALL_DRAWINGS = config["ALL_DRAWINGS"]
     SKIP_CREATOR = config["SKIP_CREATOR"]
@@ -147,8 +144,6 @@ def generate_metadata(category_name, app_mode=False, output_file=None):
             continue
             
         item_id = page_data[0].get("ItemID")
-        
-        # Print URL and prompt for additional metadata on the first encounter.
         item_data = get_bhl_item_data(item_id)
         biblio_id = item_data[0].get("TitleID")
         biblio_data = get_bhl_title_data(biblio_id)
@@ -163,23 +158,59 @@ def generate_metadata(category_name, app_mode=False, output_file=None):
             if wiki_ids_counter != 1:
                 print(f"Unexpected number of Wikidata IDs ({wiki_ids_counter}) for BHL Title ID {biblio_id}.") 
                 print(f"https://www.biodiversitylibrary.org/title/{biblio_id}")
-                publication_qid = input("Enter the Wikidata QID: ").strip()
+                print (f"Trying to infer from Wikidata")
+
+                def infer_wikidata_id_from_bhl_title(biblio_id):
+                    query = """
+                    SELECT ?item ?itemLabel 
+                    WHERE
+                    {
+                      {?item wdt:P4327 ?bhl_id . }
+                    } """
+                    query = query.replace("?bhl_id", f'"{biblio_id}"')
+                    from wdcuration import query_wikidata 
+
+                    results = query_wikidata(query)
+                    if len(results) == 1:
+                        return [results[0]['item'].split("/")[-1]]
+                    else:
+                        print("Multiple or no results found on Wikidata.")
+                        # return a list of QIDs
+                        qids = [result['item'].split("/")[-1] for result in results]
+                        print(qids)
+                        return qids
+                wikidata_qids = infer_wikidata_id_from_bhl_title(biblio_id)
+
+                if len(wikidata_qids) != 1:
+                    if auto_mode:
+                        exit()
+                
+                if len(wikidata_qids) == 1:
+                    publication_qid = wikidata_qids[0]
+                else:       
+                    publication_qid = input("Enter the Wikidata QID: ").strip()
+
                 if not publication_qid.startswith("Q"):
                     raise ValueError("Invalid Wikidata QID entered.")
                 pre_set_biblio_wikidata_id_dict[biblio_id] = publication_qid          
                 
         page_types = "; ".join([a.get("PageTypeName", "") for a in page_data[0].get("PageTypes", [])])
         names = "; ".join(list(set(name.get("NameCanonical","") for name in page_data[0].get("Names", []))))
-        pagenumber_string = [f"{a['Prefix']} {a['Number']}" for a in page_data[0].get("PageNumbers", [])]
-        page_number_prefix = page_data[0].get("PageNumbers", [{}])[0].get("Prefix", "") 
-        page_number_number = page_data[0].get("PageNumbers", [{}])[0].get("Number", "") 
+        if page_data[0].get("PageNumbers", [{}]):
+            pagenumber_string = [f"{a['Prefix']} {a['Number']}" for a in page_data[0].get("PageNumbers", [])]
+            page_number_prefix = page_data[0].get("PageNumbers", [{}])[0].get("Prefix", "") 
+            page_number_number = page_data[0].get("PageNumbers", [{}])[0].get("Number", "") 
+        else:
+            pagenumber_string = ""
+            page_number_prefix = ""
+            page_number_number = ""
         volume = page_data[0].get("Volume", "")
         holding_institution = item_data[0].get("HoldingInstitution", "")
         sponsor = item_data[0].get("Sponsor", "")
         item_publication_date = item_data[0].get("Year", "")
         copyright_status = item_data[0].get("CopyrightStatus")
         
-        if app_mode:
+        if app_mode or auto_mode: 
             illustrator = ILLUSTRATOR
             painter = PAINTER
             engraver = ENGRAVER
@@ -372,7 +403,7 @@ def get_bhl_page_data(bhl_page_id):
             "apikey": BHL_API_KEY
             }
     response = requests.get(api_url, params=params)
-    print(response.url)
+    
     if response.status_code == 200:
         page_data = response.json().get("Result", {})
     else:
@@ -445,8 +476,30 @@ def search_for_bhl_urls(wikitext):
     return bhl_page_id
 # Main logic
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="Generate metadata for BHL images.")
+    parser.add_argument("--auto_mode", action="store_true", help="Use auto mode configuration.")
+    parser.add_argument("--category_raw", type=str, help="Specify the raw category name.")
+    args = parser.parse_args()
+
+    if args.auto_mode:
+        config_file = "config_auto.json"
+        test = input("proceed? ONLY PROCEED IF THERE ARE NO PHOTOGRAPHS IN THIS CATEGORY")
+    else:
+        config_file =  "config.json"
+
+    config = load_config(config_file)
+
+    if args.category_raw:
+        CATEGORY_RAW = args.category_raw
+        config["CATEGORY_RAW"] = CATEGORY_RAW
+    else:
+        CATEGORY_RAW = config["CATEGORY_RAW"]
+
+    CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
+
     output_file = DATA / f"{CATEGORY_NAME.replace(' ', '_')}.tsv"
-    data = generate_metadata(CATEGORY_NAME, output_file=output_file)    
+    data = generate_metadata(CATEGORY_NAME, output_file=output_file, config=config, auto_mode=args.auto_mode)
     df = pd.DataFrame(data)
     df.to_csv(output_file, sep="\t", index=False)
     print(f"Data written to: {output_file}")
