@@ -1,7 +1,7 @@
 {
-    "CATEGORY_RAW": "Animalia_nova_sive_species_novae_testudinum_et_ranarum",
+    "CATEGORY_RAW": "Plantarum indigenarum et exoticarum icones ad vivum coloratae (1794)",
     "TEST": false,
-    "ALL_DRAWINGS": false,
+    "ALL_DRAWINGS": true,
     "SKIP_CREATOR": false,
     "SKIP_DATES": false,
     "ILLUSTRATOR": "",
@@ -18,9 +18,9 @@
     "INFER_FROM_INTERNET_ARCHIVE": false,
     "INTERNET_ARCHIVE_OFFSET": -1,
     "PHOTOGRAPHS_ONLY": false,
-    "SET_PROMINENT": false,
+    "SET_PROMINENT": true,
     "SKIP_PUBLISHED_IN": false,
     "ADD_EMPTY_IF_SPONSOR_MISSING": false,
-    "SKIP_EXISTING_INSTANCE_OF": false,
+    "SKIP_EXISTING_INSTANCE_OF": true,
     "RESUME": true
 }
