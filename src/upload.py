@@ -224,11 +224,14 @@ def add_public_domain_statement(row, new_statements):
         )
         references.add(ref_obj)
 
-        # If date < 1850, add "public domain" instead of no known rights.
+        # If date < 1860, add "public domain" instead of no known rights.
+        # Oldest copyright in Mexico, 100 years + life.
+        # This conservative filter assumes a work published at 25, for a Mexican person that lived through 90 years.
+
         copyright_status_qid = "Q99263261"  # No Known Copyright Restrictions
         try:
             if not SKIP_DATES:
-                if int(row.get("Item Publication Date", "").strip()) < 1850:
+                if int(row.get("Item Publication Date", "").strip()) < 1860:
                     copyright_status_qid = "Q19652"
         except:
             pass
@@ -340,21 +343,20 @@ def get_species_names_from_flickr_binomial_tags(flickr_tags):
     return names
 
 
-def add_depicts_claim(row, new_statements, media, media, set_prominent=True):
+def add_depicts_claim(row, new_statements, media, set_prominent=True):
     names = row.get("Names", "").strip().split("; ")
     if set_prominent:
         rank = "preferred"
     else:
         rank = "normal"
 
-    current_qids = []
+    current_p180_qids = []
     claims_in_media = media.claims.get_json()
     if "P180" in claims_in_media:
         p180_values = claims_in_media["P180"]
         current_p180_qids = [
             value["mainsnak"]["datavalue"]["value"]["id"] for value in p180_values
         ]
-        skip_qid_flag = False
 
     if names:
         bhl_page_id = row.get("BHL Page ID", "").strip()
@@ -375,7 +377,7 @@ def add_depicts_claim(row, new_statements, media, media, set_prominent=True):
                     # If only one word, it's probably a genus, skip
                     continue
                 qid = get_wikidata_qid_from_gbif(name)
-                if qid and qid not in current_qids:
+                if qid and qid not in current_p180_qids:
                     claim_depicts = Item(prop_nr="P180", value=qid, rank=rank)
                     ref_obj.add(
                         Item(prop_nr="P887", value="Q132359710")
@@ -397,7 +399,7 @@ def add_depicts_claim(row, new_statements, media, media, set_prominent=True):
             if len(names) > 1:
                 rank = "normal"
             qid = get_wikidata_qid_from_gbif(name)
-            if qid and qid not in current_qids:
+            if qid and qid not in current_p180_qids:
                 references = References()
                 ref_obj = Reference()
                 ref_obj.add(
@@ -664,17 +666,29 @@ def add_instance_claim(row, new_statements, media):
         return 1
 
     page_type_to_qid = {
-        "Illustration": "Q178659",
+        "Illustration": "Q178659",  # "ilustration", used in this context only for drawings
         "Table of Contents": "Q1456936",
         "Foldout": "Q2649400",
         "Map": "Q4006",
     }
 
+    # Only add Illustration if work is older than 1843 (as after that, it may be a photograph!)
     page_type = row.get("Page Types")
     if page_type in page_type_to_qid:
-        claim_instance_of = Item(prop_nr="P31", value=page_type_to_qid[page_type])
-        new_statements.append(claim_instance_of)
-        return 1
+        if page_type == "Illustration":
+            try:
+                if int(row.get("Item Publication Date", "").strip()) < 1843:
+                    claim_instance_of = Item(
+                        prop_nr="P31", value=page_type_to_qid[page_type]
+                    )
+                    new_statements.append(claim_instance_of)
+                    return 1
+            except:
+                pass
+        else:
+            claim_instance_of = Item(prop_nr="P31", value=page_type_to_qid[page_type])
+            new_statements.append(claim_instance_of)
+            return 1
 
 
 def add_published_in_claim(row, new_statements, media):
