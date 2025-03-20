@@ -15,8 +15,18 @@ from wdcuration import lookup_id
 import argparse
 import requests
 from wdcuration import lookup_id
+import time
 
-SKIP_IF_MINIMAL_DATA_IN = True
+SKIP_IF_MINIMUM_DATA_IN = True
+ADD_DEPICTS_IF_MINIMUM_DATA_IN = True
+FIX_COPYRIGHT_STATUS_IF_MINIMUM_DATA_IN = True
+NO_PHOTOGRAPHS = True
+
+if NO_PHOTOGRAPHS:
+    print("################################################################")
+    print("NO_PHOTOGRAPHS is set to True. Make sure no Photos exist on this work.")
+    print("################################################################")
+    time.sleep(0.5)
 
 
 def get_wikidata_qid_from_gbif(name):
@@ -80,10 +90,10 @@ def generate_custom_edit_summary(test_edit=False):
         skip_creator_snippet = ", without manual creator curation"
 
     if test_edit:
-        return f"SDC import (BHL Model v0.1.5 - tests{skip_creator_snippet})"
+        return f"SDC import (BHL Model v0.1.6 - tests{skip_creator_snippet})"
     else:
         return (
-            f"SDC import (BHL Model v0.1.5{skip_creator_snippet}) {editgroup_snippet}"
+            f"SDC import (BHL Model v0.1.6{skip_creator_snippet}) {editgroup_snippet}"
         )
 
 
@@ -128,19 +138,45 @@ def upload_metadata_to_commons(csv_path, config, auto_mode=False):
                     logging.error(f"Could not load MediaInfo for File:{file_name}: {e}")
                     continue
 
-            if SKIP_IF_MINIMAL_DATA_IN:
+            new_statements = []
+
+            if SKIP_IF_MINIMUM_DATA_IN:
                 claims = media.claims.get_json()
                 # instance of, published in, bhl page id, collection, sponsor
                 minimal_statements = ["P31", "P1433", "P687", "P195", "P859"]
                 if all(claim in claims for claim in minimal_statements):
                     logging.info(
-                        f"Skipping {file_name} because it already has minimal data."
+                        f"Skipping {file_name} because it already has minimum data."
                     )
+
+                    if ADD_DEPICTS_IF_MINIMUM_DATA_IN:
+                        add_depicts_claim(
+                            row, new_statements, media, set_prominent=SET_PROMINENT
+                        )
+                        if new_statements:
+                            media.claims.add(
+                                new_statements,
+                                action_if_exists=wbi_enums.ActionIfExists.MERGE_REFS_OR_APPEND,
+                            )
+                            media.write(summary=edit_summary)
+                            logging.info(
+                                f"Added depicts statement to {file_name} because it already has minimum data."
+                            )
+                    if FIX_COPYRIGHT_STATUS_IF_MINIMUM_DATA_IN:
+                        add_public_domain_statement(row, media, new_statements)
+                        if new_statements:
+                            media.claims.add(
+                                new_statements,
+                                action_if_exists=wbi_enums.ActionIfExists.REPLACE_ALL,
+                            )
+                            media.write(summary=edit_summary)
+                            logging.info(
+                                f"Added public domain statement to {file_name} because it already has minimum data."
+                            )
                     continue
-            new_statements = []
 
             add_instance_claim(row, new_statements, media)
-            add_public_domain_statement(row, new_statements)
+            add_public_domain_statement(row, media, new_statements)
             # Published in
             if not SKIP_PUBLISHED_IN:
                 add_published_in_claim(row, new_statements, media)
@@ -185,7 +221,7 @@ def upload_metadata_to_commons(csv_path, config, auto_mode=False):
                     )
 
             if not SKIP_DATES:
-                add_inception_claim(row, new_statements)
+                add_inception_claim(row, media, new_statements)
 
             if new_statements:
                 media.claims.add(
@@ -208,7 +244,7 @@ def upload_metadata_to_commons(csv_path, config, auto_mode=False):
                 logging.info(f"No SDC data to add for {file_name}, skipping...")
 
 
-def add_public_domain_statement(row, new_statements):
+def add_public_domain_statement(row, media, new_statements):
     copyright_status = row.get("Copyright Status", "")
     if (
         copyright_status == "NOT_IN_COPYRIGHT"
@@ -224,21 +260,24 @@ def add_public_domain_statement(row, new_statements):
         )
         references.add(ref_obj)
 
-        # If date < 1860, add "public domain" instead of no known rights.
-        # Oldest copyright in Mexico, 100 years + life.
-        # This conservative filter assumes a work published at 25, for a Mexican person that lived through 90 years.
-
-        copyright_status_qid = "Q99263261"  # No Known Copyright Restrictions
-        try:
-            if not SKIP_DATES:
-                if int(row.get("Item Publication Date", "").strip()) < 1860:
-                    copyright_status_qid = "Q19652"
-        except:
-            pass
+        copyright_status_qid = "Q19652"  # Setting the value to "public domain"
+        # This was decided on the 2025-03-17 BHL-Wiki meeting
 
         copyright_status_claim = Item(
             prop_nr="P6216", value=copyright_status_qid, references=references
         )
+
+        # Remove lingering "copyrighted" or "cc-by" statements:
+
+        claims_p6216 = media.claims.get("P6216")
+        for claim in claims_p6216:
+            claim_p6216_id = claim.mainsnak.datavalue.get("value").get("id")
+            if claim_p6216_id and claim_p6216_id != "Q19652":
+                claim.remove()
+
+        claims_p275 = media.claims.get("P275")
+        for claim in claims_p275:
+            claim.remove()
         new_statements.append(copyright_status_claim)
 
 
@@ -421,9 +460,18 @@ def add_depicts_claim(row, new_statements, media, set_prominent=True):
                 new_statements.append(claim_depicts)
 
 
-def add_inception_claim(row, new_statements):
+def add_inception_claim(row, media, new_statements):
     inception_str = row.get("Item Publication Date", "").strip()
-    if inception_str:
+    claims_in_media = media.claims.get_json()
+    current_p571_dates = []
+    if "P571" in claims_in_media:
+        p571_values = claims_in_media["P571"]
+        current_p571_dates = [
+            value["mainsnak"]["datavalue"]["value"]["time"][1:5]
+            for value in p571_values
+        ]
+
+    if inception_str and inception_str not in current_p571_dates:
         if len(inception_str) != 4 or not inception_str.isdigit():
             logging.warning(f"Invalid year format for inception date: {inception_str}")
             return
@@ -670,14 +718,22 @@ def add_instance_claim(row, new_statements, media):
         "Table of Contents": "Q1456936",
         "Foldout": "Q2649400",
         "Map": "Q4006",
+        "Title Page": "Q1339862",
     }
 
     # Only add Illustration if work is older than 1843 (as after that, it may be a photograph!)
     page_type = row.get("Page Types")
+
+    if page_type == "Text Illustration":
+        return 1  # I've noticed that the presence of both may related to many different kinds of images, so I'm skipping this for now
+
     if page_type in page_type_to_qid:
         if page_type == "Illustration":
             try:
-                if int(row.get("Item Publication Date", "").strip()) < 1843:
+                if (
+                    int(row.get("Item Publication Date", "").strip()) < 1843
+                    or NO_PHOTOGRAPHS
+                ):
                     claim_instance_of = Item(
                         prop_nr="P31", value=page_type_to_qid[page_type]
                     )

@@ -1,7 +1,7 @@
 {
-    "CATEGORY_RAW": "Flora Homoeopathica",
+    "CATEGORY_RAW": "Traité élémentaire et complet d'ornithologie, ou, Histoire naturelle des oiseaux",
     "TEST": false,
-    "ALL_DRAWINGS": true,
+    "ALL_DRAWINGS": false,
     "SKIP_CREATOR": false,
     "SKIP_DATES": false,
     "ILLUSTRATOR": "",
