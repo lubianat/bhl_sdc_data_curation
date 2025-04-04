@@ -1,7 +1,7 @@
 {
-    "CATEGORY_RAW": "Traité élémentaire et complet d'ornithologie, ou, Histoire naturelle des oiseaux",
+    "CATEGORY_RAW": "Johnson's household book of nature",
     "TEST": false,
-    "ALL_DRAWINGS": false,
+    "ALL_DRAWINGS": true,
     "SKIP_CREATOR": false,
     "SKIP_DATES": false,
     "ILLUSTRATOR": "",

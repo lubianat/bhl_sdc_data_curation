@@ -5,71 +5,28 @@ from wikibaseintegrator.wbi_config import config as wbi_config
 from wikibaseintegrator.models import Qualifiers, References, Reference
 from wikibaseintegrator.datatypes import Item, ExternalID, Time, URL, String
 from login import *
-from helper import get_media_info_id
+from helper import (
+    get_media_info_id,
+    get_wikidata_qid_from_gbif,
+    generate_custom_edit_summary,
+)
 from tqdm import tqdm
 from pathlib import Path
-from wdcuration import query_wikidata, add_key_and_save_to_independent_dict
+from wdcuration import add_key_and_save_to_independent_dict
 import json
-import random
 from wdcuration import lookup_id
 import argparse
-import requests
 from wdcuration import lookup_id
-import time
 
 SKIP_IF_MINIMUM_DATA_IN = True
 ADD_DEPICTS_IF_MINIMUM_DATA_IN = True
 FIX_COPYRIGHT_STATUS_IF_MINIMUM_DATA_IN = True
-NO_PHOTOGRAPHS = True
-
-if NO_PHOTOGRAPHS:
-    print("################################################################")
-    print("NO_PHOTOGRAPHS is set to True. Make sure no Photos exist on this work.")
-    print("################################################################")
-    time.sleep(0.5)
-
-
-def get_wikidata_qid_from_gbif(name):
-    # GBIF species match endpoint
-    url = "http://api.gbif.org/v1/species/match"
-    params = {"name": name}
-
-    response = requests.get(url, params=params)
-    if response.status_code != 200:
-        print("Error: Unable to reach GBIF API")
-        return
-
-    data = response.json()
-    gbif_id = data.get("speciesKey")
-    qid = lookup_id(gbif_id, property="P846")
-
-    # If GBIF identifies the name as a synonym, it returns "synonym": true
-    if data.get("synonym", False):
-        current_species_name = data.get("species")
-        if current_species_name:
-            print(
-                f"'{name}' is a synonym. The current accepted name is: {current_species_name}"
-            )
-        return qid
-    if not qid:
-        print(f"Error: Unable to find Wikidata QID for '{name}'")
-        return ""
-    return qid
-
+NO_PHOTOGRAPHS = False
 
 HERE = Path(__file__).parent
 DATA = HERE / "data"
 DICTS = HERE / "dicts"
-
-
-# Load configuration from config.json
-def load_config(config_file_name):
-    with open(HERE / config_file_name, "r") as config_file:
-        return json.load(config_file)
-
-
 LIST_OF_PLATE_PREFIXES = ["Pl.", "Tab.", "Taf."]
-
 INSTITUTIONS_DICT = json.loads(DICTS.joinpath("institutions.json").read_text())
 
 wbi_config["MEDIAWIKI_API_URL"] = "https://commons.wikimedia.org/w/api.php"
@@ -80,27 +37,15 @@ wbi_config["USER_AGENT"] = (
 )
 
 
-def generate_custom_edit_summary(test_edit=False):
-    global SKIP_CREATOR
-    # As per https://www.wikidata.org/wiki/Wikidata:Edit_groups/Adding_a_tool
-    random_hex = f"{random.randrange(0, 2**48):x}"
-    editgroup_snippet = f"([[:toolforge:editgroups-commons/b/CB/{random_hex}|details]])"
-    skip_creator_snippet = ""
-    if SKIP_CREATOR:
-        skip_creator_snippet = ", without manual creator curation"
-
-    if test_edit:
-        return f"SDC import (BHL Model v0.1.6 - tests{skip_creator_snippet})"
-    else:
-        return (
-            f"SDC import (BHL Model v0.1.6{skip_creator_snippet}) {editgroup_snippet}"
-        )
+# Load configuration from config.json
+def load_config(config_file_name):
+    with open(HERE / config_file_name, "r") as config_file:
+        return json.load(config_file)
 
 
 def upload_metadata_to_commons(csv_path, config, auto_mode=False):
 
     logging.basicConfig(level=logging.INFO)
-
     login_instance = wbi_login.Login(
         user=USERNAME,
         password=PASSWORD,
@@ -110,19 +55,15 @@ def upload_metadata_to_commons(csv_path, config, auto_mode=False):
 
     total_rows = sum(1 for _ in open(csv_path, encoding="utf-8-sig")) - 1
     edit_summary = generate_custom_edit_summary(test_edit=TEST)
-
     with open(csv_path, mode="r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter="\t")
 
         for row in tqdm(reader, desc="Processing rows", unit="rows", total=total_rows):
-
             file_name = row.get("File", "").strip()
             file_name_lower = file_name.lower()
-
             if file_name_lower.endswith(".pdf") or file_name_lower.endswith(".djvu"):
                 logging.warning(f"Skipping row with PDF/DJVU file: {file_name}")
                 continue
-
             if not file_name:
                 logging.warning("Skipping row with empty 'File' column.")
                 continue
@@ -266,9 +207,7 @@ def add_public_domain_statement(row, media, new_statements):
         copyright_status_claim = Item(
             prop_nr="P6216", value=copyright_status_qid, references=references
         )
-
         # Remove lingering "copyrighted" or "cc-by" statements:
-
         claims_p6216 = media.claims.get("P6216")
         for claim in claims_p6216:
             claim_p6216_id = claim.mainsnak.datavalue.get("value").get("id")
@@ -282,6 +221,10 @@ def add_public_domain_statement(row, media, new_statements):
 
 
 def add_creator_statements(row, new_statements):
+    # Avoid adding creator statements for extracted images; some are e.g monograms
+    is_extracted = row.get("Is Extracted", "").strip()
+    if is_extracted == "True":
+        return
     add_illustrator_claim(row, new_statements)
     add_engraver_claim(row, new_statements)
     add_lithographer_claim(row, new_statements)
@@ -370,6 +313,7 @@ def get_species_names_from_flickr_binomial_tags(flickr_tags):
     names = []
     for tag in flickr_tags:
         # Example tag + " 'taxonomy:binomial=Psittacus cyanogaster'"
+        tag = tag.replace("Taxonomy:binomial=", "taxonomy:binomial=")
         if "taxonomy:binomial=" in tag:
             # remove all non-alphanumeric characters
             taxon_name = tag.split("taxonomy:binomial=")[1].strip().replace("'", "")
@@ -388,6 +332,11 @@ def add_depicts_claim(row, new_statements, media, set_prominent=True):
         rank = "preferred"
     else:
         rank = "normal"
+    is_extracted = row.get("Is Extracted", "").strip()
+    if (
+        is_extracted == "True"
+    ):  # Avoid adding depicts statements for extracted images; some are e.g monograms
+        return
 
     current_p180_qids = []
     claims_in_media = media.claims.get_json()
@@ -809,7 +758,10 @@ if __name__ == "__main__":
     if args.auto_mode:
         config_file = "config_auto.json"
         test = input(
-            "proceed? ONLY PROCEED IF THERE ARE NO PHOTOGRAPHS IN THIS CATEGORY"
+            "Proceed with upload? Press anything to continue, or Ctrl+C to cancel."
+        )
+        print(
+            "Remember: on Linux, you may use Ctrl+S to pause the processing and Ctrl+Q to resume."
         )
     else:
         config_file = "config.json"
