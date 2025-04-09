@@ -1,7 +1,6 @@
 {
-    "CATEGORY_RAW": "Johnson's household book of nature",
+    "CATEGORY_RAW": "Les poissons (1876)",
     "TEST": false,
-    "ALL_DRAWINGS": true,
     "SKIP_CREATOR": false,
     "SKIP_DATES": false,
     "ILLUSTRATOR": "",
@@ -19,8 +18,6 @@
     "INTERNET_ARCHIVE_OFFSET": -1,
     "PHOTOGRAPHS_ONLY": false,
     "SET_PROMINENT": true,
-    "SKIP_PUBLISHED_IN": false,
     "ADD_EMPTY_IF_SPONSOR_MISSING": false,
-    "SKIP_EXISTING_INSTANCE_OF": true,
     "RESUME": true
 }

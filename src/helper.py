@@ -5,15 +5,11 @@ import random
 COMMONS_API_ENDPOINT = "https://commons.wikimedia.org/w/api.php"
 
 
-def generate_custom_edit_summary(test_edit=False):
-    global SKIP_CREATOR
+def generate_custom_edit_summary():
     # As per https://www.wikidata.org/wiki/Wikidata:Edit_groups/Adding_a_tool
     random_hex = f"{random.randrange(0, 2**48):x}"
     editgroup_snippet = f"([[:toolforge:editgroups-commons/b/CB/{random_hex}|details]])"
-    if test_edit:
-        return f"SDC import (BHL Model v0.1.6 - tests)"
-    else:
-        return f"SDC import (BHL Model v0.1.6) {editgroup_snippet}"
+    return f"SDC import (BHL Model v0.1.6) {editgroup_snippet}"
 
 
 def get_files_in_category(category_name, include_subcategories=False):

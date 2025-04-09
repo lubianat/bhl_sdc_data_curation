@@ -55,7 +55,6 @@ Some of the dependencies, in particular WikibaseIntegrator, are mods from the ve
 
 You can assure you are installing the correct version by running `pip install -r requirements.txt` .
 
-
 ### Running the pipeline without manual curation 
 
 While the script allows for adding some information manually, it implements many heuristics for better automation, relying particularly on Flickr tags. 

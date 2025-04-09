@@ -1,26 +1,26 @@
 import csv
 import logging
+import json
+import argparse
+
+from tqdm import tqdm
+from pathlib import Path
+
+import pandas as pd
+
 from wikibaseintegrator import wbi_login, WikibaseIntegrator, wbi_enums
 from wikibaseintegrator.wbi_config import config as wbi_config
 from wikibaseintegrator.models import Qualifiers, References, Reference
 from wikibaseintegrator.datatypes import Item, ExternalID, Time, URL, String
+from wdcuration import add_key_and_save_to_independent_dict, lookup_id
+
 from login import *
 from helper import (
     get_media_info_id,
     get_wikidata_qid_from_gbif,
     generate_custom_edit_summary,
 )
-from tqdm import tqdm
-from pathlib import Path
-from wdcuration import add_key_and_save_to_independent_dict
-import json
-from wdcuration import lookup_id
-import argparse
-from wdcuration import lookup_id
 
-SKIP_IF_MINIMUM_DATA_IN = True
-ADD_DEPICTS_IF_MINIMUM_DATA_IN = True
-FIX_COPYRIGHT_STATUS_IF_MINIMUM_DATA_IN = True
 NO_PHOTOGRAPHS = False
 
 HERE = Path(__file__).parent
@@ -37,13 +37,12 @@ wbi_config["USER_AGENT"] = (
 )
 
 
-# Load configuration from config.json
 def load_config(config_file_name):
     with open(HERE / config_file_name, "r") as config_file:
         return json.load(config_file)
 
 
-def upload_metadata_to_commons(csv_path, config, auto_mode=False):
+def upload_metadata_to_commons(csv_path):
 
     logging.basicConfig(level=logging.INFO)
     login_instance = wbi_login.Login(
@@ -53,136 +52,109 @@ def upload_metadata_to_commons(csv_path, config, auto_mode=False):
     )
     wbi = WikibaseIntegrator(login=login_instance)
 
-    total_rows = sum(1 for _ in open(csv_path, encoding="utf-8-sig")) - 1
-    edit_summary = generate_custom_edit_summary(test_edit=TEST)
-    with open(csv_path, mode="r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f, delimiter="\t")
+    wiki_edit_summary = generate_custom_edit_summary()
 
-        for row in tqdm(reader, desc="Processing rows", unit="rows", total=total_rows):
-            file_name = row.get("File", "").strip()
-            file_name_lower = file_name.lower()
-            if file_name_lower.endswith(".pdf") or file_name_lower.endswith(".djvu"):
-                logging.warning(f"Skipping row with PDF/DJVU file: {file_name}")
-                continue
-            if not file_name:
-                logging.warning("Skipping row with empty 'File' column.")
-                continue
+    metadata_df = pd.read_csv(csv_path, sep="\t", dtype=str)
+    metadata_df.fillna("", inplace=True)
 
-            try:
-                data = get_media_info_id(file_name)
-                mediainfo_id = data
-                media = wbi.mediainfo.get(entity_id=mediainfo_id)
-            except Exception as e:
-                if "The MW API returned that the entity was missing." in str(e):
-                    media = wbi.mediainfo.new(id=mediainfo_id)
-                else:
-                    logging.error(f"Could not load MediaInfo for File:{file_name}: {e}")
-                    continue
+    for i, row in tqdm(metadata_df.iterrows()):
+        file_name = row["File"].strip()
+        file_name_lower = file_name.lower()
+        if file_name_lower.endswith(".pdf") or file_name_lower.endswith(".djvu"):
+            logging.warning(f"Skipping row with PDF/DJVU file: {file_name}")
+            continue
+        if not file_name:
+            logging.warning("Skipping row with empty 'File' column.")
+            continue
 
-            new_statements = []
-
-            if SKIP_IF_MINIMUM_DATA_IN:
-                claims = media.claims.get_json()
-                # instance of, published in, bhl page id, collection, sponsor
-                minimal_statements = ["P31", "P1433", "P687", "P195", "P859"]
-                if all(claim in claims for claim in minimal_statements):
-                    logging.info(
-                        f"Skipping {file_name} because it already has minimum data."
-                    )
-
-                    if ADD_DEPICTS_IF_MINIMUM_DATA_IN:
-                        add_depicts_claim(
-                            row, new_statements, media, set_prominent=SET_PROMINENT
-                        )
-                        if new_statements:
-                            media.claims.add(
-                                new_statements,
-                                action_if_exists=wbi_enums.ActionIfExists.MERGE_REFS_OR_APPEND,
-                            )
-                            media.write(summary=edit_summary)
-                            logging.info(
-                                f"Added depicts statement to {file_name} because it already has minimum data."
-                            )
-                    if FIX_COPYRIGHT_STATUS_IF_MINIMUM_DATA_IN:
-                        add_public_domain_statement(row, media, new_statements)
-                        if new_statements:
-                            media.claims.add(
-                                new_statements,
-                                action_if_exists=wbi_enums.ActionIfExists.REPLACE_ALL,
-                            )
-                            media.write(summary=edit_summary)
-                            logging.info(
-                                f"Added public domain statement to {file_name} because it already has minimum data."
-                            )
-                    continue
-
-            add_instance_claim(row, new_statements, media)
-            add_public_domain_statement(row, media, new_statements)
-            # Published in
-            if not SKIP_PUBLISHED_IN:
-                add_published_in_claim(row, new_statements, media)
-            add_collection_claim(row, new_statements)
-            if row["Sponsor"] == "":
-                if ADD_EMPTY_IF_SPONSOR_MISSING:
-                    add_blank_sponsor(row, new_statements)
-            add_digital_sponsor_claim(row, new_statements)
-            add_bhl_id_claim(row, new_statements)
-            add_flickr_id_claim(row, new_statements)
-            if "P31" in media.claims.get_json():
-                instance_of_value = media.claims.get_json()["P31"][0]["mainsnak"][
-                    "datavalue"
-                ]["value"]["id"]
-                if instance_of_value in ["Q178659", "Q131597974"]:
-                    # Either "Illustrated text" or "Illustration"
-                    if not SKIP_CREATOR:
-                        add_creator_statements(row, new_statements)
-                    add_depicts_claim(
-                        row, new_statements, media, set_prominent=SET_PROMINENT
-                    )
-
-                elif PHOTOGRAPHS_ONLY:
-                    # e.g. for photos, skip or handle differently
-                    pass
-
+        try:
+            data = get_media_info_id(file_name)
+            mediainfo_id = data
+            media = wbi.mediainfo.get(entity_id=mediainfo_id)
+        except Exception as e:
+            if "The MW API returned that the entity was missing." in str(e):
+                media = wbi.mediainfo.new(id=mediainfo_id)
             else:
-                if ALL_DRAWINGS:
-                    add_depicts_claim(
-                        row, new_statements, media, set_prominent=SET_PROMINENT
-                    )
+                logging.error(f"Could not load MediaInfo for File:{file_name}: {e}")
+                continue
 
-                    if not SKIP_CREATOR:
-                        add_creator_statements(row, new_statements)
-                elif PHOTOGRAPHS_ONLY:
-                    # e.g. for photos, skip or handle differently
-                    pass
-                elif row.get("Page Types", "") == "Illustration":
-                    add_creator_statements(row, new_statements)
-                    add_depicts_claim(
-                        row, new_statements, media, set_prominent=SET_PROMINENT
-                    )
+        new_statements = []
+        claims = media.claims.get_json()
 
-            if not SKIP_DATES:
-                add_inception_claim(row, media, new_statements)
+        # skipping most info if mimimum statements are in (instance of, published in, bhl page id, collection, sponsor)
+        minimal_statements = ["P31", "P1433", "P687", "P195", "P859"]
+        if all(claim in claims for claim in minimal_statements):
+            logging.info(f"Skipping {file_name} because it already has minimum data.")
 
+            # Always adding depicts information
+            add_depicts_claim(row, new_statements, media)
             if new_statements:
                 media.claims.add(
                     new_statements,
                     action_if_exists=wbi_enums.ActionIfExists.MERGE_REFS_OR_APPEND,
                 )
-                try:
-                    if TEST:
-                        print(
-                            f"Check contributions on https://commons.wikimedia.org/wiki/Special:Contributions/{USERNAME}"
-                        )
-                        input("Press Enter to write SDC data...")
-                    media.write(summary=edit_summary)
-                    tqdm.write(
-                        f"No errors when trying to update {file_name} with SDC data."
+                media.write(summary=wiki_edit_summary)
+                logging.info(
+                    f"Added depicts statement to {file_name} because it already has minimum data."
+                )
+
+            # Always adding public domain statement, replacing all other information
+            add_public_domain_statement(row, media, new_statements)
+            if new_statements:
+                media.claims.add(
+                    new_statements,
+                    action_if_exists=wbi_enums.ActionIfExists.REPLACE_ALL,
+                )
+                media.write(summary=wiki_edit_summary)
+                logging.info(
+                    f"Added public domain statement to {file_name} because it already has minimum data."
+                )
+            continue
+
+        add_instance_claim(row, new_statements, media)
+        add_public_domain_statement(row, media, new_statements)
+        add_published_in_claim(row, new_statements, media)
+        add_collection_claim(row, new_statements)
+        if row["Sponsor"] == "":
+            add_blank_sponsor(row, new_statements)
+        add_digital_sponsor_claim(row, new_statements)
+        add_bhl_id_claim(row, new_statements)
+        add_flickr_id_claim(row, new_statements)
+        if "P31" in claims:
+            instance_of_value = claims["P31"][0]["mainsnak"]["datavalue"]["value"]["id"]
+            if instance_of_value in ["Q178659", "Q131597974"]:
+                # Either "Illustrated text" or "Illustration"
+                if not SKIP_CREATOR:
+                    add_creator_statements(row, new_statements)
+                add_depicts_claim(row, new_statements, media)
+
+        else:
+            if row.get("Page Types", "") == "Illustration":
+                add_creator_statements(row, new_statements)
+                add_depicts_claim(row, new_statements, media)
+
+        if not SKIP_DATES:
+            add_inception_claim(row, media, new_statements)
+
+        if new_statements:
+            media.claims.add(
+                new_statements,
+                action_if_exists=wbi_enums.ActionIfExists.MERGE_REFS_OR_APPEND,
+            )
+            try:
+                if TEST:
+                    print(
+                        f"Check contributions on https://commons.wikimedia.org/wiki/Special:Contributions/{USERNAME}"
                     )
-                except Exception as e:
-                    logging.error(f"Failed to write SDC for {file_name}: {e}")
-            else:
-                logging.info(f"No SDC data to add for {file_name}, skipping...")
+                    input("Press Enter to write SDC data...")
+                media.write(summary=wiki_edit_summary)
+                tqdm.write(
+                    f"No errors when trying to update {file_name} with SDC data."
+                )
+            except Exception as e:
+                logging.error(f"Failed to write SDC for {file_name}: {e}")
+        else:
+            logging.info(f"No SDC data to add for {file_name}, skipping...")
 
 
 def add_public_domain_statement(row, media, new_statements):
@@ -326,12 +298,11 @@ def get_species_names_from_flickr_binomial_tags(flickr_tags):
     return names
 
 
-def add_depicts_claim(row, new_statements, media, set_prominent=True):
-    names = row.get("Names", "").strip().split("; ")
-    if set_prominent:
-        rank = "preferred"
-    else:
-        rank = "normal"
+def add_depicts_claim(row, new_statements, media):
+
+    rank = "preferred"
+    bhl_names = row.get("Names", "").strip().split("; ")
+
     is_extracted = row.get("Is Extracted", "").strip()
     if (
         is_extracted == "True"
@@ -346,10 +317,12 @@ def add_depicts_claim(row, new_statements, media, set_prominent=True):
             value["mainsnak"]["datavalue"]["value"]["id"] for value in p180_values
         ]
 
-    if names:
+    if bhl_names:
         bhl_page_id = row.get("BHL Page ID", "").strip()
         if bhl_page_id:
-            for name in names:
+            if len(bhl_names) > 1:
+                rank = "normal"
+            for name in bhl_names:
                 if name == "":
                     continue
 
@@ -383,9 +356,9 @@ def add_depicts_claim(row, new_statements, media, set_prominent=True):
     flickr_id = row.get("Flickr ID", "").strip()
     if flickr_tags:
         flickr_species_names = get_species_names_from_flickr_binomial_tags(flickr_tags)
+        if len(flickr_species_names) > 1:
+            rank = "normal"
         for name in flickr_species_names:
-            if len(names) > 1:
-                rank = "normal"
             qid = get_wikidata_qid_from_gbif(name)
             if qid and qid not in current_p180_qids:
                 references = References()
@@ -652,14 +625,9 @@ def get_institution_as_a_qid(collection):
 
 
 def add_instance_claim(row, new_statements, media):
-    global ALL_DRAWINGS
-    global SKIP_EXISTING_INSTANCE_OF
-    if SKIP_EXISTING_INSTANCE_OF:
-        if "P31" in media.claims.get_json():
-            return 1
-    if ALL_DRAWINGS == True:
-        claim_instance_of = Item(prop_nr="P31", value="Q178659")
-        new_statements.append(claim_instance_of)
+
+    # By default, skip adding instances if some instance is present
+    if "P31" in media.claims.get_json():
         return 1
 
     page_type_to_qid = {
@@ -714,8 +682,9 @@ def add_published_in_claim(row, new_statements, media):
     if published_in:
         qualifiers = Qualifiers()
         qualifiers.add(Item(prop_nr="P518", value="Q112134971"))  # analog work
-        volume = row.get("Volume", "").strip()
+        volume = row["Volume"]
         if volume:
+            volume = volume.strip()
             qualifiers.add(String(prop_nr="P478", value=volume))
 
         page_number_prefix = row.get("Page Number Prefix", "").strip()
@@ -769,12 +738,10 @@ if __name__ == "__main__":
     config = load_config(config_file)
 
     TEST = config["TEST"]
-    ALL_DRAWINGS = config["ALL_DRAWINGS"]
     SKIP_CREATOR = config["SKIP_CREATOR"]
     INFER_BHL_PAGE_FROM_FLICKR_ID = config["INFER_BHL_PAGE_FROM_FLICKR_ID"]
     INFER_FROM_INTERNET_ARCHIVE = config["INFER_FROM_INTERNET_ARCHIVE"]
     INTERNET_ARCHIVE_OFFSET = config["INTERNET_ARCHIVE_OFFSET"]
-    PHOTOGRAPHS_ONLY = config["PHOTOGRAPHS_ONLY"]
     ILLUSTRATOR = config["ILLUSTRATOR"]
     PAINTER = config["PAINTER"]
     ENGRAVER = config["ENGRAVER"]
@@ -783,11 +750,7 @@ if __name__ == "__main__":
     COMMONS_API_ENDPOINT = config["COMMONS_API_ENDPOINT"]
     WIKIDATA_SPARQL_ENDPOINT = config["WIKIDATA_SPARQL_ENDPOINT"]
     BHL_BASE_URL = config["BHL_BASE_URL"]
-    SET_PROMINENT = config["SET_PROMINENT"]
-    SKIP_PUBLISHED_IN = config["SKIP_PUBLISHED_IN"]
     SKIP_DATES = config["SKIP_DATES"]
-    ADD_EMPTY_IF_SPONSOR_MISSING = config["ADD_EMPTY_IF_SPONSOR_MISSING"]
-    SKIP_EXISTING_INSTANCE_OF = config["SKIP_EXISTING_INSTANCE_OF"]
 
     if args.category_raw:
         CATEGORY_RAW = args.category_raw
@@ -799,4 +762,4 @@ if __name__ == "__main__":
 
     output_file = DATA / f"{CATEGORY_NAME.replace(' ', '_')}.tsv"
 
-    upload_metadata_to_commons(output_file, config=config, auto_mode=args.auto_mode)
+    upload_metadata_to_commons(output_file)

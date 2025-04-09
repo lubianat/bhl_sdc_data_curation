@@ -1,21 +1,21 @@
 import re
 import requests
 import json
-from pathlib import Path
+import argparse
+
 import pandas as pd
+
+
+from pathlib import Path
 from tqdm import tqdm
 from login import *
 from helper import *
-import argparse
 
-
-# Directories for data and dictionaries
 HERE = Path(__file__).parent
 DATA = HERE / "data"
 DICTS = HERE / "dicts"
 API_CACHE = {}
 
-# Load the dictionary mapping BHL page IDs to Flickr IDs
 BHL_TO_FLICKR_DICT = json.loads(DICTS.joinpath("bhl_flickr_dict.json").read_text())
 
 
