@@ -1,8 +1,6 @@
 {
     "CATEGORY_RAW": "Les poissons (1876)",
-    "TEST": false,
     "SKIP_CREATOR": false,
-    "SKIP_DATES": false,
     "ILLUSTRATOR": "",
     "INCLUDE_SUBCATEGORIES": true,
     "GET_FLICKR_TAGS": true,
