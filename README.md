@@ -31,7 +31,10 @@ The script may perform poorly on:
 
 You will need:
 
-- A Wikimedia account
+- An owner-only consumer Oauth 2 token for Wikimedia (see https://www.mediawiki.org/wiki/OAuth/Owner-only_consumers)
+
+You can register at https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose/oauth2. The only right it needs is "Edit existing pages" and the only project, "commons.wikimedia.org". 
+
 - A BHL API key
 - A Flickr API key 
 
@@ -40,8 +43,8 @@ Make sure these keys don't leak, e.g. when publishing the code on an online repo
 
 login.py may look like:
 
-USERNAME = "your-user-name"       
-PASSWORD =  "your-password"
+WIKI_CLIENT_KEY =  "the-client-key"   
+WIKI_CLIENT_SECRET =  "the-client-secret"   
 FLICKR_API_KEY= "the-flickr-key"
 FLICKR_API_SECRET = "the-flickr-secret"
 BHL_API_KEY = "the-bhl-api-key"

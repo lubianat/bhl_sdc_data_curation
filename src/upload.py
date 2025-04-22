@@ -1,6 +1,4 @@
-import csv
 import logging
-import json
 import argparse
 
 from tqdm import tqdm
@@ -40,9 +38,8 @@ set_up_wbi_config(wbi_config)
 def upload_metadata_to_commons(csv_path):
 
     logging.basicConfig(level=logging.INFO)
-    login_instance = wbi_login.Login(
-        user=USERNAME,
-        password=PASSWORD,
+    login_instance = wbi_login.OAuth2(
+        consumer_token=WIKI_CLIENT_KEY, consumer_secret=WIKI_CLIENT_SECRET
     )
     wbi = WikibaseIntegrator(login=login_instance)
 

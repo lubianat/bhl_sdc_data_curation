@@ -5,7 +5,7 @@ import argparse
 
 import pandas as pd
 
-
+from wdcuration import render_qs_url
 from pathlib import Path
 from tqdm import tqdm
 from login import *
@@ -28,8 +28,6 @@ RESUME = True
 
 config = load_config("config.json")
 CATEGORY_RAW = config["CATEGORY_RAW"]
-TEST = config["TEST"]
-ALL_DRAWINGS = config["ALL_DRAWINGS"]
 SKIP_CREATOR = config["SKIP_CREATOR"]
 INFER_BHL_PAGE_FROM_FLICKR_ID = config["INFER_BHL_PAGE_FROM_FLICKR_ID"]
 INFER_FROM_INTERNET_ARCHIVE = config["INFER_FROM_INTERNET_ARCHIVE"]
@@ -44,11 +42,7 @@ COMMONS_API_ENDPOINT = config["COMMONS_API_ENDPOINT"]
 WIKIDATA_SPARQL_ENDPOINT = config["WIKIDATA_SPARQL_ENDPOINT"]
 BHL_BASE_URL = config["BHL_BASE_URL"]
 SET_PROMINENT = config["SET_PROMINENT"]
-SKIP_PUBLISHED_IN = config["SKIP_PUBLISHED_IN"]
-SKIP_DATES = config["SKIP_DATES"]
 ADD_EMPTY_IF_SPONSOR_MISSING = config["ADD_EMPTY_IF_SPONSOR_MISSING"]
-SKIP_EXISTING_INSTANCE_OF = config["SKIP_EXISTING_INSTANCE_OF"]
-TEST = config["TEST"]
 
 CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
 
@@ -57,50 +51,34 @@ def generate_metadata(
     category_name, app_mode=False, output_file=None, config=None, auto_mode=False
 ):
     global CATEGORY_NAME
-    global TEST
-    global ALL_DRAWINGS
     global SKIP_CREATOR
     global INFER_BHL_PAGE_FROM_FLICKR_ID
     global INFER_FROM_INTERNET_ARCHIVE
     global INTERNET_ARCHIVE_OFFSET
     global PHOTOGRAPHS_ONLY
-    global ILLUSTRATOR
-    global PAINTER
-    global ENGRAVER
-    global LITHOGRAPHER
     global REF_URL_FOR_AUTHORS
     global COMMONS_API_ENDPOINT
     global WIKIDATA_SPARQL_ENDPOINT
     global BHL_BASE_URL
     global SET_PROMINENT
-    global SKIP_PUBLISHED_IN
     global SKIP_DATES
     global ADD_EMPTY_IF_SPONSOR_MISSING
     global SKIP_EXISTING_INSTANCE_OF
-    global TEST
     global INCLUDE_SUBCATEGORIES
     global GET_FLICKR_TAGS
 
-    TEST = config["TEST"]
-    ALL_DRAWINGS = config["ALL_DRAWINGS"]
     SKIP_CREATOR = config["SKIP_CREATOR"]
     INFER_BHL_PAGE_FROM_FLICKR_ID = config["INFER_BHL_PAGE_FROM_FLICKR_ID"]
     INFER_FROM_INTERNET_ARCHIVE = config["INFER_FROM_INTERNET_ARCHIVE"]
     INTERNET_ARCHIVE_OFFSET = config["INTERNET_ARCHIVE_OFFSET"]
     PHOTOGRAPHS_ONLY = config["PHOTOGRAPHS_ONLY"]
-    ILLUSTRATOR = config["ILLUSTRATOR"]
-    PAINTER = config["PAINTER"]
-    ENGRAVER = config["ENGRAVER"]
-    LITHOGRAPHER = config["LITHOGRAPHER"]
     REF_URL_FOR_AUTHORS = config["REF_URL_FOR_AUTHORS"]
     COMMONS_API_ENDPOINT = config["COMMONS_API_ENDPOINT"]
     WIKIDATA_SPARQL_ENDPOINT = config["WIKIDATA_SPARQL_ENDPOINT"]
     BHL_BASE_URL = config["BHL_BASE_URL"]
     SET_PROMINENT = config["SET_PROMINENT"]
-    SKIP_PUBLISHED_IN = config["SKIP_PUBLISHED_IN"]
-    SKIP_DATES = config["SKIP_DATES"]
     ADD_EMPTY_IF_SPONSOR_MISSING = config["ADD_EMPTY_IF_SPONSOR_MISSING"]
-    SKIP_EXISTING_INSTANCE_OF = config["SKIP_EXISTING_INSTANCE_OF"]
+    SING = config["ADD_EMPTY_IF_SPONSOR_MISSING"]
     INCLUDE_SUBCATEGORIES = config["INCLUDE_SUBCATEGORIES"]
     GET_FLICKR_TAGS = config["GET_FLICKR_TAGS"]
     CATEGORY_NAME = CATEGORY_RAW.replace("_", " ").replace("Category:", "").strip()
@@ -202,6 +180,11 @@ def generate_metadata(
                 if len(wikidata_qids) == 1:
                     publication_qid = wikidata_qids[0]
                 else:
+                    qs_url = (
+                        "https://bhl-qs-generator-production.up.railway.app/?bhl="
+                        + biblio_id
+                    )
+                    print(qs_url)
                     publication_qid = input("Enter the Wikidata QID: ").strip()
 
                 if not publication_qid.startswith("Q"):
@@ -240,42 +223,6 @@ def generate_metadata(
         item_publication_date = item_data[0].get("Year", "")
         copyright_status = item_data[0].get("CopyrightStatus")
 
-        if app_mode or auto_mode:
-            illustrator = ILLUSTRATOR
-            painter = PAINTER
-            engraver = ENGRAVER
-            lithographer = LITHOGRAPHER
-            ref_url_for_authors = REF_URL_FOR_AUTHORS
-
-        else:
-            if not processed_creators:
-                illustrator = (
-                    ILLUSTRATOR
-                    if ILLUSTRATOR != ""
-                    else input("Enter the Illustrator QID: ").strip()
-                )
-                painter = (
-                    PAINTER
-                    if PAINTER != ""
-                    else input("Enter the Painter QID: ").strip()
-                )
-                engraver = (
-                    ENGRAVER
-                    if ENGRAVER != ""
-                    else input("Enter the Engraver QID: ").strip()
-                )
-                lithographer = (
-                    LITHOGRAPHER
-                    if LITHOGRAPHER != ""
-                    else input("Enter the Lithographer QID: ").strip()
-                )
-                ref_url_for_authors = (
-                    REF_URL_FOR_AUTHORS
-                    if REF_URL_FOR_AUTHORS != ""
-                    else input("Enter the Ref URL for the authors: ").strip()
-                )
-                processed_creators = True
-
         if GET_FLICKR_TAGS:
             flickr_tags = get_flickr_tags(flickr_id)
         else:
@@ -294,12 +241,7 @@ def generate_metadata(
             "Collection": holding_institution or "",
             "Sponsor": sponsor or "",
             "Bibliography ID": biblio_id or "",
-            "Illustrator": illustrator or "",
-            "Engraver": engraver or "",
-            "Lithographer": lithographer or "",
-            "Painter": painter or "",
             "Names": names or "",
-            "Ref URL for Authors": ref_url_for_authors or "",
             "Item Publication Date": item_publication_date or "",
             "Item ID": item_id or "",
             "Flickr ID": flickr_id or "",
@@ -308,8 +250,7 @@ def generate_metadata(
             "Volume": volume or "",
             "Is Extracted": is_extracted,
         }
-        if TEST and processed_counter >= 3:
-            break
+
         processed_counter += 1
         rows.append(row)
 
