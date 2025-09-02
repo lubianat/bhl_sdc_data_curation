@@ -6,6 +6,10 @@ It relies on a custom WikibaseIntegrator patch available at https://github.com/l
 
 It abides by the metadata model at https://docs.google.com/spreadsheets/d/1ocqDQBFaKAQvPsP3HMlrh52faiHiaDU-D9P3yz1oV_M/edit?gid=0#gid=0.
 
+## General pipeline
+
+![A workflow for adding metadata as Structured Data on Commons from BHL images](https://github.com/lubianat/bhl-gallery/blob/main/www/python/src/static/bhl_to_sdc_pipeline.png)
+
 ## Resources used
 
 The script combines custom curation with calls to the Commons API, to the BHL website and to the Flickr API. 
